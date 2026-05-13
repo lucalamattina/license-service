@@ -10,7 +10,7 @@ The canonical design document is [DESIGN.md](DESIGN.md). Architectural decisions
 
 ## Requirements
 
-- Node 20 LTS or newer (see [.nvmrc](.nvmrc))
+- Node 20 LTS or newer (enforced by `engines.node` in [package.json](package.json))
 - Docker Desktop (used from Phase 1 onward to run the Postgres container)
 
 ## Running locally
