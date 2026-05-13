@@ -6,7 +6,7 @@ The canonical design document is [DESIGN.md](DESIGN.md). Architectural decisions
 
 ## Status
 
-**Phase 0 — project scaffolding.** Fastify boots, lints, typechecks, and serves `GET /health`. No database wiring yet.
+**Phase 1 — database schema & migrations.** The data model from DESIGN.md is realised in Postgres via Drizzle. Migration applies cleanly; partial unique index and cascade FKs are verified by tests. No API routes touching the DB yet.
 
 ## Requirements
 
@@ -17,10 +17,12 @@ The canonical design document is [DESIGN.md](DESIGN.md). Architectural decisions
 
 ```
 npm install
+docker compose up -d
+npm run db:migrate
 npm run dev
 ```
 
-The server listens on `http://localhost:3000` by default. Confirm it's alive:
+Postgres listens on `localhost:5433` (5432 is left for any host-installed Postgres). The HTTP server listens on `http://localhost:3000` by default. Confirm it's alive:
 
 ```
 curl http://localhost:3000/health
@@ -37,17 +39,32 @@ curl http://localhost:3000/health
 | `npm run typecheck`  | Run `tsc --noEmit`                          |
 | `npm run lint`       | Run ESLint                                  |
 | `npm run format`     | Run Prettier in write mode                  |
+| `npm run db:generate`| Generate a Drizzle migration from `src/db/schema.ts` |
+| `npm run db:migrate` | Apply pending migrations to the dev DB      |
+| `npm run db:reset`   | Drop + recreate the dev DB, re-apply migrations (Windows) |
 
 ## Project layout
 
 ```
 src/
-  server.ts        Fastify app builder
-  index.ts         entrypoint
+  server.ts            Fastify app builder
+  index.ts             entrypoint
+  db/
+    schema.ts          Drizzle schema (users, products, licenses)
+    client.ts          Drizzle client factory
+    migrate.ts         programmatic migration runner
   plugins/
-    logger.ts      pino configuration
+    logger.ts          pino configuration
   routes/
-    health.ts      GET /health
-tests/             Vitest test suites
-docs/adr/          Architectural decision records
+    health.ts          GET /health
+drizzle/
+  migrations/          generated SQL migrations
+scripts/
+  db-migrate.ts        CLI wrapper around runMigrations()
+  db-reset.ps1         drop + recreate dev DB
+tests/
+  helpers/db.ts        test DB setup + truncation helper
+  db/                  schema + cascade tests
+  health.test.ts       smoke test
+docs/adr/              Architectural decision records
 ```
