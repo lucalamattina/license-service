@@ -8,7 +8,9 @@ import {
   getLicenseUser,
   issueLicense,
   listLicenses,
+  revokeLicense,
   serializeLicense,
+  validateLicense,
 } from '../services/licenses.js';
 import { wrapList } from '../lib/response.js';
 
@@ -40,5 +42,15 @@ export async function registerLicenseRoutes(app: FastifyInstance, db: Database):
 
   f.get('/licenses/:id/user', { schema: { params: licenseIdParams } }, async (req) => {
     return getLicenseUser(db, req.params.id);
+  });
+
+  f.post('/licenses/:id/revoke', { schema: { params: licenseIdParams } }, async (req) => {
+    const license = await revokeLicense(db, req.params.id);
+    return serializeLicense(license);
+  });
+
+  f.post('/licenses/:id/validate', { schema: { params: licenseIdParams } }, async (req) => {
+    const result = await validateLicense(db, req.params.id);
+    return { valid: result.valid, license: serializeLicense(result.license) };
   });
 }

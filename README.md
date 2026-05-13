@@ -6,7 +6,7 @@ The canonical design document is [DESIGN.md](DESIGN.md). Architectural decisions
 
 ## Status
 
-**Phase 4 — Licenses: create / list / read + relationship endpoints.** Non-stateful license operations work end-to-end: `POST /licenses` issues an Active license, `GET /licenses` and `GET /licenses/:id` read, and the four relationship endpoints (`/users/:id/licenses`, `/users/:id/products`, `/products/:id/licenses`, `/products/:id/users`) honour the documented listing semantics — license-record endpoints return all statuses, relationship endpoints filter to Active. POST currently rejects any duplicate active license outright (placeholder); the replace-if-better policy lands in Phase 6. Revoke and validate land in Phase 5.
+**Phase 5 — License state transitions.** `POST /licenses/:id/revoke` flips Active → Revoked atomically (with `WHERE status='active'` as the state-machine guard); already-terminal licenses return `409 license_not_active`. `POST /licenses/:id/validate` opens a single transaction, reads the license, and — if it's Active but past `expires_at` — transitions it to Expired in the same transaction before responding `{ valid: false, license: {...} }`. The state-machine predicates live in [src/domain/license-state.ts](src/domain/license-state.ts) as pure functions. Revoking via the API correctly drops the product from `GET /users/:id/products`. Full duplicate-license replacement policy still lands in Phase 6.
 
 ## Requirements
 
@@ -53,6 +53,8 @@ src/
     schema.ts          Drizzle schema (users, products, licenses)
     client.ts          Drizzle client factory
     migrate.ts         programmatic migration runner
+  domain/
+    license-state.ts   pure state-machine predicates (canRevoke, shouldExpire)
   lib/
     errors.ts          ApiError class + error code union
     error-mapper.ts    pure unknown -> { status, body } mapper
@@ -87,7 +89,8 @@ tests/
   foundation/          unit tests for ApiError, error mapper, response helpers
   users/               /users integration + schema tests
   products/            /products integration tests
-  licenses/            /licenses + relationship integration tests
+  domain/              pure unit tests for the license state machine
+  licenses/            /licenses + relationship + transitions integration tests
   health.test.ts       smoke test
 docs/adr/              Architectural decision records
 ```

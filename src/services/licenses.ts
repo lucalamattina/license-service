@@ -2,6 +2,7 @@ import { and, eq } from 'drizzle-orm';
 import { licenses, products, users } from '../db/schema.js';
 import type { Database } from '../db/client.js';
 import { ApiError } from '../lib/errors.js';
+import { shouldExpire } from '../domain/license-state.js';
 import type { Product } from './products.js';
 import type { User } from './users.js';
 
@@ -153,4 +154,70 @@ export async function listUsersForProduct(db: Database, productId: string): Prom
     .from(licenses)
     .innerJoin(users, eq(licenses.userId, users.id))
     .where(and(eq(licenses.productId, productId), eq(licenses.status, 'active')));
+}
+
+export async function revokeLicense(db: Database, id: string): Promise<License> {
+  // Try to flip Active → Revoked atomically. Postgres row-locks the matching row;
+  // the WHERE status='active' guard prevents resurrection of a terminal-state license.
+  const [revoked] = await db
+    .update(licenses)
+    .set({ status: 'revoked', stateChangedAt: new Date() })
+    .where(and(eq(licenses.id, id), eq(licenses.status, 'active')))
+    .returning();
+
+  if (revoked) {
+    return revoked;
+  }
+
+  // 0 rows updated: either the license doesn't exist, or it's already terminal.
+  // Re-read to give the caller the right error code.
+  const [existing] = await db.select().from(licenses).where(eq(licenses.id, id));
+  if (!existing) {
+    throw ApiError.notFound(`License ${id} not found`);
+  }
+  throw ApiError.licenseNotActive(
+    `License ${id} cannot be revoked because it is already ${existing.status}`,
+  );
+}
+
+export interface ValidateLicenseResult {
+  valid: boolean;
+  license: License;
+}
+
+export async function validateLicense(
+  db: Database,
+  id: string,
+): Promise<ValidateLicenseResult> {
+  // Single transaction so the expire-on-validate transition is atomic and any
+  // concurrent expire/revoke is observed consistently.
+  return db.transaction(async (tx) => {
+    const [initial] = await tx.select().from(licenses).where(eq(licenses.id, id));
+    if (!initial) {
+      throw ApiError.notFound(`License ${id} not found`);
+    }
+
+    if (!shouldExpire(initial.status, initial.expiresAt)) {
+      return { valid: initial.status === 'active', license: initial };
+    }
+
+    // initial.status was 'active' and expires_at <= now: attempt the transition.
+    const [updated] = await tx
+      .update(licenses)
+      .set({ status: 'expired', stateChangedAt: new Date() })
+      .where(and(eq(licenses.id, id), eq(licenses.status, 'active')))
+      .returning();
+
+    if (updated) {
+      return { valid: false, license: updated };
+    }
+
+    // Someone else (the scan job or a revoke) transitioned the row between our
+    // SELECT and UPDATE. Re-read to report the freshest state.
+    const [refreshed] = await tx.select().from(licenses).where(eq(licenses.id, id));
+    if (!refreshed) {
+      throw ApiError.notFound(`License ${id} not found`);
+    }
+    return { valid: false, license: refreshed };
+  });
 }
