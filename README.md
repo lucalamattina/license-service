@@ -6,7 +6,7 @@ The canonical design document is [DESIGN.md](DESIGN.md). Architectural decisions
 
 ## Status
 
-**Phase 1 — database schema & migrations.** The data model from DESIGN.md is realised in Postgres via Drizzle. Migration applies cleanly; partial unique index and cascade FKs are verified by tests. No API routes touching the DB yet.
+**Phase 2A — API foundation.** Cross-cutting plumbing landed: `ApiError` with the documented codes, a pure error-to-response mapper that handles `ApiError` / `ZodError` / unknown errors, the Fastify error-handler and Zod-validator wiring, and a `wrapList` helper for the list envelope. Tested as pure unit tests; Fastify integration is exercised in Phase 2B through real `/users` routes.
 
 ## Requirements
 
@@ -53,8 +53,14 @@ src/
     schema.ts          Drizzle schema (users, products, licenses)
     client.ts          Drizzle client factory
     migrate.ts         programmatic migration runner
+  lib/
+    errors.ts          ApiError class + error code union
+    error-mapper.ts    pure unknown -> { status, body } mapper
+    response.ts        wrapList() list envelope helper
   plugins/
     logger.ts          pino configuration
+    error-handler.ts   Fastify setErrorHandler wiring
+    zod.ts             Zod validator/serializer wiring
   routes/
     health.ts          GET /health
 drizzle/
@@ -65,6 +71,7 @@ scripts/
 tests/
   helpers/db.ts        test DB setup + truncation helper
   db/                  schema + cascade tests
+  foundation/          unit tests for ApiError, error mapper, response helpers
   health.test.ts       smoke test
 docs/adr/              Architectural decision records
 ```

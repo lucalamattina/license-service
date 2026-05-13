@@ -119,6 +119,7 @@ The "error" field is a machine-readable code; the "message" field is informative
 - duplicate_email (409) — POST /users attempted with an email already registered (compared on the canonical lowercased form)
 - duplicate_active_license (409) — issuance rejected by the duplicate-license policy
 - license_not_active (409) — revoke attempted on a license that is already Revoked or Expired (validate on a non-Active license is not an error: it returns 200 with valid: false)
+- internal_error (500) — any unhandled error reaching the top-level error handler; the response message is generic and does not leak implementation details
 
 State-machine violations always return 409, never 400 or 422.
 
