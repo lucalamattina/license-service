@@ -6,7 +6,7 @@ The canonical design document is [DESIGN.md](DESIGN.md). Architectural decisions
 
 ## Status
 
-**Phase 2A — API foundation.** Cross-cutting plumbing landed: `ApiError` with the documented codes, a pure error-to-response mapper that handles `ApiError` / `ZodError` / unknown errors, the Fastify error-handler and Zod-validator wiring, and a `wrapList` helper for the list envelope. Tested as pure unit tests; Fastify integration is exercised in Phase 2B through real `/users` routes.
+**Phase 2B — Users CRUD.** `POST/GET/DELETE /users` and `GET /users/:id` working end-to-end. Email is normalised (trim + lowercase) at the schema boundary so duplicate detection is case-insensitive. Phase 2A's foundation is exercised through these routes: Zod validation failures map to `400 validation_error` with field-level details, unique-constraint conflicts map to `409 duplicate_email`, missing rows map to `404 not_found`.
 
 ## Requirements
 
@@ -61,17 +61,25 @@ src/
     logger.ts          pino configuration
     error-handler.ts   Fastify setErrorHandler wiring
     zod.ts             Zod validator/serializer wiring
+  schemas/
+    users.ts           Zod schemas for /users
+  services/
+    users.ts           user CRUD against Drizzle
   routes/
     health.ts          GET /health
+    users.ts           /users routes
 drizzle/
   migrations/          generated SQL migrations
 scripts/
   db-migrate.ts        CLI wrapper around runMigrations()
   db-reset.ts          drop + recreate dev DB, re-apply migrations
 tests/
-  helpers/db.ts        test DB setup + truncation helper
+  helpers/
+    db.ts              test DB setup + truncation helper
+    app.ts             builds a Fastify app + test DB for integration tests
   db/                  schema + cascade tests
   foundation/          unit tests for ApiError, error mapper, response helpers
+  users/               /users integration + schema tests
   health.test.ts       smoke test
 docs/adr/              Architectural decision records
 ```

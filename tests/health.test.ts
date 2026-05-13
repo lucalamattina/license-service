@@ -1,22 +1,24 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
-import { buildServer } from '../src/server.js';
+import type { Sql } from 'postgres';
+import { buildTestApp } from './helpers/app.js';
 
 describe('GET /health', () => {
   let app: FastifyInstance;
+  let client: Sql;
 
   beforeAll(async () => {
-    process.env.LOG_LEVEL = 'silent';
-    app = await buildServer();
+    ({ app, client } = await buildTestApp());
   });
 
   afterAll(async () => {
     await app.close();
+    await client.end();
   });
 
   it('returns 200 with status ok', async () => {
-    const response = await app.inject({ method: 'GET', url: '/health' });
-    expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual({ status: 'ok' });
+    const res = await app.inject({ method: 'GET', url: '/health' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ status: 'ok' });
   });
 });

@@ -1,13 +1,24 @@
 import Fastify, { type FastifyInstance } from 'fastify';
+import type { Database } from './db/client.js';
 import { buildLoggerOptions } from './plugins/logger.js';
+import { registerErrorHandler } from './plugins/error-handler.js';
+import { registerZod } from './plugins/zod.js';
 import { registerHealthRoutes } from './routes/health.js';
+import { registerUserRoutes } from './routes/users.js';
 
-export async function buildServer(): Promise<FastifyInstance> {
+export interface ServerOptions {
+  db: Database;
+}
+
+export async function buildServer(options: ServerOptions): Promise<FastifyInstance> {
   const app = Fastify({
     logger: buildLoggerOptions(),
   });
 
-  await app.register(registerHealthRoutes);
+  await registerZod(app);
+  await registerErrorHandler(app);
+  await registerHealthRoutes(app);
+  await registerUserRoutes(app, options.db);
 
   return app;
 }
