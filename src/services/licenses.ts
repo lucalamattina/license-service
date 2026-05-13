@@ -55,24 +55,64 @@ export async function issueLicense(db: Database, input: IssueLicenseInput): Prom
     );
   }
 
+  // The full algorithm and its correctness argument live in
+  // docs/algorithms/license-issuance.md. Keep this code in sync with that document.
   try {
-    const [license] = await db
-      .insert(licenses)
-      .values({
-        userId: input.userId,
-        productId: input.productId,
-        expiresAt: input.expiresAt,
-        status: 'active',
-      })
-      .returning();
-    return license!;
+    return await db.transaction(async (tx) => {
+      // Step 1: lock the existing Active license for this (user, product), if any.
+      // FOR UPDATE serializes concurrent issuance when a row exists; when no row
+      // matches, race-safety falls to the partial unique index in step 4.
+      const [existing] = await tx
+        .select({ id: licenses.id, expiresAt: licenses.expiresAt })
+        .from(licenses)
+        .where(
+          and(
+            eq(licenses.userId, input.userId),
+            eq(licenses.productId, input.productId),
+            eq(licenses.status, 'active'),
+          ),
+        )
+        .for('update');
+
+      // Step 2: decide.
+      if (existing) {
+        if (input.expiresAt.getTime() <= existing.expiresAt.getTime()) {
+          throw ApiError.duplicateActiveLicense(
+            `User already has an active license for this product with equal or later expiration (existing expires at ${existing.expiresAt.toISOString()})`,
+          );
+        }
+        // Step 3: revoke the existing license. The WHERE status='active' is
+        // defensive; the FOR UPDATE lock guarantees the row is still Active.
+        await tx
+          .update(licenses)
+          .set({ status: 'revoked', stateChangedAt: new Date() })
+          .where(and(eq(licenses.id, existing.id), eq(licenses.status, 'active')));
+      }
+
+      // Step 4: insert the new license. The partial unique index serializes any
+      // concurrent insert that slipped past step 1's FOR UPDATE (because no row
+      // matched then, but a concurrent transaction has since committed one).
+      const [inserted] = await tx
+        .insert(licenses)
+        .values({
+          userId: input.userId,
+          productId: input.productId,
+          expiresAt: input.expiresAt,
+          status: 'active',
+        })
+        .returning();
+      return inserted!;
+    });
   } catch (err) {
+    if (err instanceof ApiError) {
+      throw err;
+    }
     const code = getPgErrorCode(err);
     if (code === PG_UNIQUE_VIOLATION) {
-      // TEMPORARY (Phase 4): partial unique index on (user_id, product_id) WHERE status='active'
-      // rejects any duplicate. Phase 6 replaces this with the replace-if-better policy.
+      // The partial unique index tripped: a concurrent transaction won the race
+      // and the user now has an active license. No internal retry.
       throw ApiError.duplicateActiveLicense(
-        'User already has an active license for this product',
+        'Concurrent issuance won the race; the user now has an active license for this product',
       );
     }
     if (code === PG_FK_VIOLATION) {

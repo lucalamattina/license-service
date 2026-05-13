@@ -2,11 +2,11 @@
 
 A small TypeScript REST service for issuing, validating, and revoking software licenses across a fictional product catalog. Built as a learning project.
 
-The canonical design document is [DESIGN.md](DESIGN.md). Architectural decisions live in [docs/adr/](docs/adr/).
+The canonical design document is [DESIGN.md](DESIGN.md). Architectural decisions live in [docs/adr/](docs/adr/). Detailed transaction algorithms live in [docs/algorithms/](docs/algorithms/).
 
 ## Status
 
-**Phase 5 — License state transitions.** `POST /licenses/:id/revoke` flips Active → Revoked atomically (with `WHERE status='active'` as the state-machine guard); already-terminal licenses return `409 license_not_active`. `POST /licenses/:id/validate` opens a single transaction, reads the license, and — if it's Active but past `expires_at` — transitions it to Expired in the same transaction before responding `{ valid: false, license: {...} }`. The state-machine predicates live in [src/domain/license-state.ts](src/domain/license-state.ts) as pure functions. Revoking via the API correctly drops the product from `GET /users/:id/products`. Full duplicate-license replacement policy still lands in Phase 6.
+**Phase 6 — Duplicate-license replacement policy.** Issuance now runs inside a single transaction: `SELECT ... FOR UPDATE` on the (at most one) existing Active license for `(user, product)`, then either revoke-and-replace (new `expires_at` strictly later) or reject with `409 duplicate_active_license` (worse-or-equal). The partial unique index from Phase 1 catches concurrent inserts the row lock can't (the no-existing-row case). The full algorithm and its correctness argument live in [docs/algorithms/license-issuance.md](docs/algorithms/license-issuance.md). Concurrency is verified by 60 randomized races (two scenarios × 30 iterations) that all produced exactly one winner. No internal retries on `23505` — race losers see 409.
 
 ## Requirements
 

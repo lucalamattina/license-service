@@ -130,34 +130,8 @@ describe('Licenses routes', () => {
       expect(res.json().error).toBe('not_found');
     });
 
-    it('rejects a second Active license for the same (user, product) regardless of expires_at', async () => {
-      const userId = await createUser(app, 'g@x.com');
-      const productId = await createProduct(app, 'G');
-
-      const first = await app.inject({
-        method: 'POST',
-        url: '/licenses',
-        payload: { user_id: userId, product_id: productId, expires_at: futureIso(10) },
-      });
-      expect(first.statusCode).toBe(201);
-
-      // Phase 4 behaviour: reject regardless of new vs old expires_at.
-      const longer = await app.inject({
-        method: 'POST',
-        url: '/licenses',
-        payload: { user_id: userId, product_id: productId, expires_at: futureIso(100) },
-      });
-      expect(longer.statusCode).toBe(409);
-      expect(longer.json().error).toBe('duplicate_active_license');
-
-      const shorter = await app.inject({
-        method: 'POST',
-        url: '/licenses',
-        payload: { user_id: userId, product_id: productId, expires_at: futureIso(5) },
-      });
-      expect(shorter.statusCode).toBe(409);
-      expect(shorter.json().error).toBe('duplicate_active_license');
-    });
+    // Duplicate-active-license policy (replacement + rejection) is exercised in detail
+    // in tests/licenses/duplicate-policy.test.ts.
 
     it('allows a new license when the existing one for the pair is Revoked', async () => {
       const userId = await createUser(app, 'h@x.com');
