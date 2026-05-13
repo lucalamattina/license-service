@@ -6,7 +6,7 @@ The canonical design document is [DESIGN.md](DESIGN.md). Architectural decisions
 
 ## Status
 
-**Phase 3 — Products CRUD.** `POST/GET/DELETE /products` and `GET /products/:id` working end-to-end. Products have no uniqueness constraint, so the routes are a thin CRUD layer on top of the same error envelope and response patterns as `/users`. License-relationship endpoints (`/products/{id}/licenses`, `/products/{id}/users`) land with Phase 4.
+**Phase 4 — Licenses: create / list / read + relationship endpoints.** Non-stateful license operations work end-to-end: `POST /licenses` issues an Active license, `GET /licenses` and `GET /licenses/:id` read, and the four relationship endpoints (`/users/:id/licenses`, `/users/:id/products`, `/products/:id/licenses`, `/products/:id/users`) honour the documented listing semantics — license-record endpoints return all statuses, relationship endpoints filter to Active. POST currently rejects any duplicate active license outright (placeholder); the replace-if-better policy lands in Phase 6. Revoke and validate land in Phase 5.
 
 ## Requirements
 
@@ -64,13 +64,16 @@ src/
   schemas/
     users.ts           Zod schemas for /users
     products.ts        Zod schemas for /products
+    licenses.ts        Zod schemas for /licenses
   services/
     users.ts           user CRUD against Drizzle
-    products.ts        product CRUD against Drizzle
+    products.ts       product CRUD against Drizzle
+    licenses.ts        license issuance + reads + relationship queries
   routes/
     health.ts          GET /health
-    users.ts           /users routes
-    products.ts        /products routes
+    users.ts           /users routes (+ /users/:id/licenses, /users/:id/products)
+    products.ts        /products routes (+ /products/:id/licenses, /products/:id/users)
+    licenses.ts        /licenses routes
 drizzle/
   migrations/          generated SQL migrations
 scripts/
@@ -84,6 +87,7 @@ tests/
   foundation/          unit tests for ApiError, error mapper, response helpers
   users/               /users integration + schema tests
   products/            /products integration tests
+  licenses/            /licenses + relationship integration tests
   health.test.ts       smoke test
 docs/adr/              Architectural decision records
 ```

@@ -7,6 +7,11 @@ import {
   getProductById,
   listProducts,
 } from '../services/products.js';
+import {
+  listLicensesForProduct,
+  listUsersForProduct,
+  serializeLicense,
+} from '../services/licenses.js';
 import type { Database } from '../db/client.js';
 import { wrapList } from '../lib/response.js';
 
@@ -30,5 +35,15 @@ export async function registerProductRoutes(app: FastifyInstance, db: Database):
   f.delete('/products/:id', { schema: { params: productIdParams } }, async (req, reply) => {
     await deleteProduct(db, req.params.id);
     return reply.code(204).send();
+  });
+
+  f.get('/products/:id/licenses', { schema: { params: productIdParams } }, async (req) => {
+    const items = await listLicensesForProduct(db, req.params.id);
+    return wrapList(items.map(serializeLicense));
+  });
+
+  f.get('/products/:id/users', { schema: { params: productIdParams } }, async (req) => {
+    const items = await listUsersForProduct(db, req.params.id);
+    return wrapList(items);
   });
 }
