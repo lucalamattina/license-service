@@ -1,6 +1,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import type { Sql } from 'postgres';
+import type { Redis } from 'ioredis';
 import { buildTestApp, truncateAll } from '../helpers/app.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -9,13 +10,15 @@ const ZERO_UUID = '00000000-0000-0000-0000-000000000000';
 describe('Users routes', () => {
   let app: FastifyInstance;
   let client: Sql;
+  let redis: Redis;
 
   beforeAll(async () => {
-    ({ app, client } = await buildTestApp());
+    ({ app, client, redis } = await buildTestApp());
   });
 
   afterAll(async () => {
     await app.close();
+    await redis.quit();
     await client.end();
   });
 

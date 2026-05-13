@@ -1,6 +1,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import type { Sql } from 'postgres';
+import type { Redis } from 'ioredis';
 import { buildTestApp, truncateAll } from '../helpers/app.js';
 import { licenses } from '../../src/db/schema.js';
 import type { Database } from '../../src/db/client.js';
@@ -31,13 +32,15 @@ describe('Licenses routes', () => {
   let app: FastifyInstance;
   let db: Database;
   let client: Sql;
+  let redis: Redis;
 
   beforeAll(async () => {
-    ({ app, db, client } = await buildTestApp());
+    ({ app, db, client, redis } = await buildTestApp());
   });
 
   afterAll(async () => {
     await app.close();
+    await redis.quit();
     await client.end();
   });
 

@@ -1,6 +1,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import type { Sql } from 'postgres';
+import type { Redis } from 'ioredis';
 import { eq } from 'drizzle-orm';
 import { buildTestApp, truncateAll } from '../helpers/app.js';
 import { licenses } from '../../src/db/schema.js';
@@ -41,13 +42,15 @@ describe('POST /licenses/:id/revoke', () => {
   let app: FastifyInstance;
   let db: Database;
   let client: Sql;
+  let redis: Redis;
 
   beforeAll(async () => {
-    ({ app, db, client } = await buildTestApp());
+    ({ app, db, client, redis } = await buildTestApp());
   });
 
   afterAll(async () => {
     await app.close();
+    await redis.quit();
     await client.end();
   });
 
@@ -137,13 +140,15 @@ describe('POST /licenses/:id/validate', () => {
   let app: FastifyInstance;
   let db: Database;
   let client: Sql;
+  let redis: Redis;
 
   beforeAll(async () => {
-    ({ app, db, client } = await buildTestApp());
+    ({ app, db, client, redis } = await buildTestApp());
   });
 
   afterAll(async () => {
     await app.close();
+    await redis.quit();
     await client.end();
   });
 

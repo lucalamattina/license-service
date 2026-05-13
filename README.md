@@ -6,12 +6,12 @@ The canonical design document is [DESIGN.md](DESIGN.md). Architectural decisions
 
 ## Status
 
-**Phase 6 — Duplicate-license replacement policy.** Issuance now runs inside a single transaction: `SELECT ... FOR UPDATE` on the (at most one) existing Active license for `(user, product)`, then either revoke-and-replace (new `expires_at` strictly later) or reject with `409 duplicate_active_license` (worse-or-equal). The partial unique index from Phase 1 catches concurrent inserts the row lock can't (the no-existing-row case). The full algorithm and its correctness argument live in [docs/algorithms/license-issuance.md](docs/algorithms/license-issuance.md). Concurrency is verified by 60 randomized races (two scenarios × 30 iterations) that all produced exactly one winner. No internal retries on `23505` — race losers see 409.
+**Phase 7 — Async expiration job (BullMQ + Redis).** A repeatable BullMQ job (`upsertJobScheduler`, idempotent on a stable key) scans every minute and flips Active-but-past-expiry licenses to Expired in a single SQL statement. The worker, the queue, and the `/ready` health check now live in the boot path; SIGTERM drains the worker, closes the queue, and quits both Redis and Postgres connections. `/ready` returns 200 only when both Postgres (`SELECT 1`) and Redis (`PING`) are reachable, else 503 with per-dep `checks`. The scan path shares the `status='active'` guard with the validate path, so concurrent scan+validate against the same license consistently lands one transition (verified by 30-iteration race test).
 
 ## Requirements
 
 - Node 20 LTS or newer (enforced by `engines.node` in [package.json](package.json))
-- Docker Desktop (used from Phase 1 onward to run the Postgres container)
+- Docker Desktop (Postgres from Phase 1, Redis from Phase 7)
 
 ## Running locally
 
@@ -22,7 +22,7 @@ npm run db:migrate
 npm run dev
 ```
 
-Postgres listens on `localhost:5433` (5432 is left for any host-installed Postgres). The HTTP server listens on `http://localhost:3000` by default. Confirm it's alive:
+Postgres listens on `localhost:5433` and Redis on `localhost:6380` (custom host ports to avoid clashing with any host-installed Postgres/Redis). The HTTP server listens on `http://localhost:3000` by default. Confirm it's alive:
 
 ```
 curl http://localhost:3000/health
@@ -55,6 +55,11 @@ src/
     migrate.ts         programmatic migration runner
   domain/
     license-state.ts   pure state-machine predicates (canRevoke, shouldExpire)
+  queue/
+    connection.ts      ioredis + BullMQ connection helpers
+    scheduler.ts       queue, worker, and repeatable-job scheduler
+    jobs/
+      expire-licenses.ts  scan-and-flip worker function
   lib/
     errors.ts          ApiError class + error code union
     error-mapper.ts    pure unknown -> { status, body } mapper
@@ -72,7 +77,7 @@ src/
     products.ts       product CRUD against Drizzle
     licenses.ts        license issuance + reads + relationship queries
   routes/
-    health.ts          GET /health
+    health.ts          GET /health, GET /ready
     users.ts           /users routes (+ /users/:id/licenses, /users/:id/products)
     products.ts        /products routes (+ /products/:id/licenses, /products/:id/users)
     licenses.ts        /licenses routes
@@ -91,6 +96,7 @@ tests/
   products/            /products integration tests
   domain/              pure unit tests for the license state machine
   licenses/            /licenses + relationship + transitions integration tests
+  queue/               expire-licenses worker tests + /ready integration tests
   health.test.ts       smoke test
 docs/adr/              Architectural decision records
 ```
