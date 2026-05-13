@@ -41,7 +41,7 @@ curl http://localhost:3000/health
 | `npm run format`     | Run Prettier in write mode                  |
 | `npm run db:generate`| Generate a Drizzle migration from `src/db/schema.ts` |
 | `npm run db:migrate` | Apply pending migrations to the dev DB      |
-| `npm run db:reset`   | Drop + recreate the dev DB, re-apply migrations (Windows) |
+| `npm run db:reset`   | Drop + recreate the dev DB, re-apply migrations |
 
 ## Project layout
 
@@ -61,7 +61,7 @@ drizzle/
   migrations/          generated SQL migrations
 scripts/
   db-migrate.ts        CLI wrapper around runMigrations()
-  db-reset.ps1         drop + recreate dev DB
+  db-reset.ts          drop + recreate dev DB, re-apply migrations
 tests/
   helpers/db.ts        test DB setup + truncation helper
   db/                  schema + cascade tests
