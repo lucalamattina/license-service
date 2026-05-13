@@ -4,6 +4,7 @@ import { buildLoggerOptions } from './plugins/logger.js';
 import { registerErrorHandler } from './plugins/error-handler.js';
 import { registerZod } from './plugins/zod.js';
 import { registerHealthRoutes } from './routes/health.js';
+import { registerProductRoutes } from './routes/products.js';
 import { registerUserRoutes } from './routes/users.js';
 
 export interface ServerOptions {
@@ -19,6 +20,7 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
   await registerErrorHandler(app);
   await registerHealthRoutes(app);
   await registerUserRoutes(app, options.db);
+  await registerProductRoutes(app, options.db);
 
   return app;
 }

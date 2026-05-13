@@ -6,7 +6,7 @@ The canonical design document is [DESIGN.md](DESIGN.md). Architectural decisions
 
 ## Status
 
-**Phase 2B — Users CRUD.** `POST/GET/DELETE /users` and `GET /users/:id` working end-to-end. Email is normalised (trim + lowercase) at the schema boundary so duplicate detection is case-insensitive. Phase 2A's foundation is exercised through these routes: Zod validation failures map to `400 validation_error` with field-level details, unique-constraint conflicts map to `409 duplicate_email`, missing rows map to `404 not_found`.
+**Phase 3 — Products CRUD.** `POST/GET/DELETE /products` and `GET /products/:id` working end-to-end. Products have no uniqueness constraint, so the routes are a thin CRUD layer on top of the same error envelope and response patterns as `/users`. License-relationship endpoints (`/products/{id}/licenses`, `/products/{id}/users`) land with Phase 4.
 
 ## Requirements
 
@@ -63,11 +63,14 @@ src/
     zod.ts             Zod validator/serializer wiring
   schemas/
     users.ts           Zod schemas for /users
+    products.ts        Zod schemas for /products
   services/
     users.ts           user CRUD against Drizzle
+    products.ts        product CRUD against Drizzle
   routes/
     health.ts          GET /health
     users.ts           /users routes
+    products.ts        /products routes
 drizzle/
   migrations/          generated SQL migrations
 scripts/
@@ -80,6 +83,7 @@ tests/
   db/                  schema + cascade tests
   foundation/          unit tests for ApiError, error mapper, response helpers
   users/               /users integration + schema tests
+  products/            /products integration tests
   health.test.ts       smoke test
 docs/adr/              Architectural decision records
 ```
