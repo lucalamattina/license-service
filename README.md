@@ -92,30 +92,30 @@ For a service whose central design moment is a Postgres-specific concurrency pat
 
 All single-resource endpoints return a bare object; collection endpoints wrap their payload in `{ "data": [...] }`. Errors use the structured shape `{ "error": "<code>", "message": "...", "details"?: ... }`. Full reference in [DESIGN.md](DESIGN.md).
 
-| Method | Path                              | Purpose                                        |
-| ------ | --------------------------------- | ---------------------------------------------- |
-| GET    | `/health`                         | Liveness — 200 as long as the process is alive |
+| Method | Path                              | Purpose                                                          |
+| ------ | --------------------------------- | -----------------------------------------------------------------|
+| GET    | `/health`                         | Liveness — 200 as long as the process is alive                   |
 | GET    | `/ready`                          | Readiness — 200 only if Postgres + Redis are reachable, else 503 |
-| GET    | `/metrics`                        | Prometheus exposition format                   |
-| POST   | `/users`                          | Create a user (email is normalised: trim + lowercase) |
-| GET    | `/users`                          | List all users                                 |
-| GET    | `/users/:id`                      | Get a user by id                               |
-| DELETE | `/users/:id`                      | Delete a user (cascades to licenses)           |
-| GET    | `/users/:id/licenses`             | All licenses for the user (every status)       |
-| GET    | `/users/:id/products`             | Products the user currently holds an Active license for |
-| POST   | `/products`                       | Create a product                               |
-| GET    | `/products`                       | List all products                              |
-| GET    | `/products/:id`                   | Get a product by id                            |
-| DELETE | `/products/:id`                   | Delete a product (cascades to licenses)        |
-| GET    | `/products/:id/licenses`          | All licenses for the product (every status)    |
-| GET    | `/products/:id/users`             | Users currently holding an Active license      |
-| POST   | `/licenses`                       | Issue a license (replacement-or-reject policy) |
-| GET    | `/licenses`                       | List all licenses (every status)               |
-| GET    | `/licenses/:id`                   | Get a license by id                            |
-| GET    | `/licenses/:id/product`           | Get the license's product                      |
-| GET    | `/licenses/:id/user`              | Get the license's user                         |
-| POST   | `/licenses/:id/revoke`            | Revoke an Active license; 409 if already terminal |
-| POST   | `/licenses/:id/validate`          | Validate; auto-transitions Active→Expired if past `expires_at`. Response: `{ valid, license }` |
+| GET    | `/metrics`                        | Prometheus exposition format                                     |
+| POST   | `/users`                          | Create a user (email is normalised: trim + lowercase)            |
+| GET    | `/users`                          | List all users                                                   |
+| GET    | `/users/:id`                      | Get a user by id                                                 |
+| DELETE | `/users/:id`                      | Delete a user (cascades to licenses)                             |
+| GET    | `/users/:id/licenses`             | All licenses for the user (every status)                         |
+| GET    | `/users/:id/products`             | Products the user currently holds an Active license for          |
+| POST   | `/products`                       | Create a product                                                 |
+| GET    | `/products`                       | List all products                                                |
+| GET    | `/products/:id`                   | Get a product by id                                              |
+| DELETE | `/products/:id`                   | Delete a product (cascades to licenses)                          |
+| GET    | `/products/:id/licenses`          | All licenses for the product (every status)                      |
+| GET    | `/products/:id/users`             | Users currently holding an Active license                        |
+| POST   | `/licenses`                       | Issue a license (replacement-or-reject policy)                   |
+| GET    | `/licenses`                       | List all licenses (every status)                                 |
+| GET    | `/licenses/:id`                   | Get a license by id                                              |
+| GET    | `/licenses/:id/product`           | Get the license's product                                        |
+| GET    | `/licenses/:id/user`              | Get the license's user                                           |
+| POST   | `/licenses/:id/revoke`            | Revoke an Active license; 409 if already terminal                |
+| POST   | `/licenses/:id/validate`          | Validate; auto-transitions Active→Expired if past `expires_at`.  |Response: `{ valid, license }` |
 
 ## Scripts
 
