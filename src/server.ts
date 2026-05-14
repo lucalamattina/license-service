@@ -3,6 +3,7 @@ import type { Redis } from 'ioredis';
 import type { Database } from './db/client.js';
 import { buildLoggerOptions } from './plugins/logger.js';
 import { registerErrorHandler } from './plugins/error-handler.js';
+import { registerMetricsRoute } from './plugins/metrics.js';
 import { registerZod } from './plugins/zod.js';
 import { registerHealthRoutes, registerReadinessRoute } from './routes/health.js';
 import { registerLicenseRoutes } from './routes/licenses.js';
@@ -23,6 +24,7 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
   await registerErrorHandler(app);
   await registerHealthRoutes(app);
   await registerReadinessRoute(app, options);
+  await registerMetricsRoute(app);
   await registerUserRoutes(app, options.db);
   await registerProductRoutes(app, options.db);
   await registerLicenseRoutes(app, options.db);

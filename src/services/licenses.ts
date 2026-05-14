@@ -3,6 +3,12 @@ import { licenses, products, users } from '../db/schema.js';
 import type { Database } from '../db/client.js';
 import { ApiError } from '../lib/errors.js';
 import { shouldExpire } from '../domain/license-state.js';
+import {
+  licenseValidationsTotal,
+  licensesExpiredTotal,
+  licensesIssuedTotal,
+  licensesRevokedTotal,
+} from '../plugins/metrics.js';
 import type { Product } from './products.js';
 import type { User } from './users.js';
 
@@ -58,7 +64,7 @@ export async function issueLicense(db: Database, input: IssueLicenseInput): Prom
   // The full algorithm and its correctness argument live in
   // docs/algorithms/license-issuance.md. Keep this code in sync with that document.
   try {
-    return await db.transaction(async (tx) => {
+    const license = await db.transaction(async (tx) => {
       // Step 1: lock the existing Active license for this (user, product), if any.
       // FOR UPDATE serializes concurrent issuance when a row exists; when no row
       // matches, race-safety falls to the partial unique index in step 4.
@@ -103,6 +109,8 @@ export async function issueLicense(db: Database, input: IssueLicenseInput): Prom
         .returning();
       return inserted!;
     });
+    licensesIssuedTotal.inc();
+    return license;
   } catch (err) {
     if (err instanceof ApiError) {
       throw err;
@@ -206,6 +214,7 @@ export async function revokeLicense(db: Database, id: string): Promise<License> 
     .returning();
 
   if (revoked) {
+    licensesRevokedTotal.inc();
     return revoked;
   }
 
@@ -231,14 +240,18 @@ export async function validateLicense(
 ): Promise<ValidateLicenseResult> {
   // Single transaction so the expire-on-validate transition is atomic and any
   // concurrent expire/revoke is observed consistently.
-  return db.transaction(async (tx) => {
+  const result = await db.transaction(async (tx) => {
     const [initial] = await tx.select().from(licenses).where(eq(licenses.id, id));
     if (!initial) {
       throw ApiError.notFound(`License ${id} not found`);
     }
 
     if (!shouldExpire(initial.status, initial.expiresAt)) {
-      return { valid: initial.status === 'active', license: initial };
+      return {
+        valid: initial.status === 'active',
+        license: initial,
+        transitionedHere: false,
+      };
     }
 
     // initial.status was 'active' and expires_at <= now: attempt the transition.
@@ -249,7 +262,7 @@ export async function validateLicense(
       .returning();
 
     if (updated) {
-      return { valid: false, license: updated };
+      return { valid: false, license: updated, transitionedHere: true };
     }
 
     // Someone else (the scan job or a revoke) transitioned the row between our
@@ -258,6 +271,13 @@ export async function validateLicense(
     if (!refreshed) {
       throw ApiError.notFound(`License ${id} not found`);
     }
-    return { valid: false, license: refreshed };
+    return { valid: false, license: refreshed, transitionedHere: false };
   });
+
+  licenseValidationsTotal.inc({ result: result.valid ? 'valid' : 'invalid' });
+  if (result.transitionedHere) {
+    licensesExpiredTotal.inc({ path: 'validate' });
+  }
+
+  return { valid: result.valid, license: result.license };
 }

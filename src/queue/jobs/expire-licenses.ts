@@ -1,6 +1,7 @@
 import { and, eq, lte, sql } from 'drizzle-orm';
 import { licenses } from '../../db/schema.js';
 import type { Database } from '../../db/client.js';
+import { licensesExpiredTotal } from '../../plugins/metrics.js';
 
 export interface ExpireLicensesResult {
   expired: number;
@@ -29,5 +30,8 @@ export async function runExpireLicensesJob(db: Database): Promise<ExpireLicenses
     .set({ status: 'expired', stateChangedAt: sql`now()` })
     .where(and(eq(licenses.status, 'active'), lte(licenses.expiresAt, sql`now()`)))
     .returning({ id: licenses.id });
+  if (rows.length > 0) {
+    licensesExpiredTotal.inc({ path: 'scan' }, rows.length);
+  }
   return { expired: rows.length };
 }

@@ -6,7 +6,7 @@ The canonical design document is [DESIGN.md](DESIGN.md). Architectural decisions
 
 ## Status
 
-**Phase 7 — Async expiration job (BullMQ + Redis).** A repeatable BullMQ job (`upsertJobScheduler`, idempotent on a stable key) scans every minute and flips Active-but-past-expiry licenses to Expired in a single SQL statement. The worker, the queue, and the `/ready` health check now live in the boot path; SIGTERM drains the worker, closes the queue, and quits both Redis and Postgres connections. `/ready` returns 200 only when both Postgres (`SELECT 1`) and Redis (`PING`) are reachable, else 503 with per-dep `checks`. The scan path shares the `status='active'` guard with the validate path, so concurrent scan+validate against the same license consistently lands one transition (verified by 30-iteration race test).
+**Phase 8 — Observability: `/metrics`.** Prometheus-format metrics via `prom-client`: process defaults plus four custom counters — `licenses_issued_total`, `licenses_revoked_total`, `licenses_expired_total{path="scan"|"validate"}`, `license_validations_total{result="valid"|"invalid"}`. Counters increment after the relevant transaction commits (so rejected requests don't bump them). The `path` label on `licenses_expired_total` distinguishes which writer flipped the row, and a no-double-counting test races the scan against N validates and asserts the two paths sum to exactly N.
 
 ## Requirements
 
@@ -68,6 +68,7 @@ src/
     logger.ts          pino configuration
     error-handler.ts   Fastify setErrorHandler wiring
     zod.ts             Zod validator/serializer wiring
+    metrics.ts         prom-client registry, counters, GET /metrics route
   schemas/
     users.ts           Zod schemas for /users
     products.ts        Zod schemas for /products
@@ -96,7 +97,7 @@ tests/
   products/            /products integration tests
   domain/              pure unit tests for the license state machine
   licenses/            /licenses + relationship + transitions integration tests
-  queue/               expire-licenses worker tests + /ready integration tests
+  queue/               expire-licenses worker tests + /ready + /metrics integration tests
   health.test.ts       smoke test
 docs/adr/              Architectural decision records
 ```
