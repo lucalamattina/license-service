@@ -27,5 +27,23 @@ services:
       timeout: 3s
       retries: 5
 
+  app:
+    build: .
+    container_name: license-service-app
+    profiles: ['full-stack']
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://license_service:license_service@postgres:5432/license_service
+      REDIS_URL: redis://redis:6379
+      RUN_MIGRATIONS_ON_BOOT: 'true'
+      LOG_LEVEL: info
+    ports:
+      - '3000:3000'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
 volumes:
   postgres-data:

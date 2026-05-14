@@ -1,0 +1,16 @@
+node_modules
+dist
+coverage
+.git
+.github
+.vscode
+.idea
+.env
+.env.*
+*.log
+tests
+docs
+PLAN.md
+CONTEXT.md
+README.md
+DESIGN.md

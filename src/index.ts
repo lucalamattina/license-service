@@ -1,5 +1,6 @@
 import { buildServer } from './server.js';
 import { createDatabase } from './db/client.js';
+import { runMigrations } from './db/migrate.js';
 import { createRedisClient } from './queue/connection.js';
 import {
   createLicenseQueue,
@@ -15,6 +16,12 @@ const DATABASE_URL =
 const REDIS_URL = process.env.REDIS_URL ?? 'redis://localhost:6380';
 
 async function main(): Promise<void> {
+  if (process.env.RUN_MIGRATIONS_ON_BOOT === 'true') {
+    // Idempotent — Drizzle's migrator skips already-applied migrations. Production
+    // images opt in via env so the container is self-sufficient on `docker compose up`.
+    await runMigrations(DATABASE_URL);
+  }
+
   const { db, client: dbClient } = createDatabase(DATABASE_URL);
   const redis = createRedisClient(REDIS_URL);
   const app = await buildServer({ db, redis });
