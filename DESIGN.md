@@ -59,6 +59,18 @@ Rate limiting: A simple rate limiting mechanism should be implemented, especiall
 
 Deletions: User and product deletion cascades to licenses for the learning project. Production would soft-delete users (preserving the audit trail) and anonymize associated licenses rather than hard-deleting them.
 
+### Split the worker out of the API process
+
+Right now the BullMQ worker runs in the same Node process as the Fastify HTTP server (see [src/index.ts](src/index.ts)). That keeps `docker compose up` to a single app container and makes local development friction-free, but it couples two jobs whose lifecycle and scaling profiles are different. In production the worker should be its own deployment:
+
+- **Independent scaling.** HTTP traffic and expiration scans have different load curves. A spike in `POST /licenses/:id/validate` should be able to scale API replicas without spinning up extra workers (or vice versa).
+- **Blast-radius isolation.** A bad migration that wedges one process shouldn't take both down. If the worker OOMs because of a bigger-than-expected scan, the API stays up and continues to serve `/health`, `/ready`, and the synchronous expire-on-validate path.
+- **Clean shutdown semantics.** SIGTERM today drains the worker *and* stops the HTTP server in one shutdown handler. Splitting them lets each process implement the right drain policy for its own work — the worker can finish in-flight jobs without keeping the API offline.
+- **Cheaper deploys.** Schema migrations or API-only changes wouldn't need to bounce the worker (and lose its scheduler ticks), and worker-only changes wouldn't need an HTTP rolling deploy.
+
+The shape of the change is small: extract the queue/worker bootstrap from `src/index.ts` into a sibling `src/worker.ts`, add a second Dockerfile target (or one Dockerfile with two CMDs), and run them as separate services in compose / k8s. The application code already factors cleanly — the worker only needs the database connection and the Redis URL.
+
+
 Data Model
 
 Users
