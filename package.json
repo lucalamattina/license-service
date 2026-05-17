@@ -15,10 +15,13 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:unit": "vitest run tests/foundation tests/domain tests/users/users.schema.test.ts",
+    "test:integration": "vitest run --exclude=tests/foundation/** --exclude=tests/domain/** --exclude=tests/users/users.schema.test.ts",
     "lint": "eslint .",
     "format": "prettier --write .",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx scripts/db-migrate.ts",
+    "db:migrate:test": "tsx scripts/db-migrate-test.ts",
     "db:reset": "tsx scripts/db-reset.ts"
   },
   "dependencies": {

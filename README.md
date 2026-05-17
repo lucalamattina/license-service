@@ -1,5 +1,7 @@
 # license-service
 
+[![CI](https://github.com/lucalamattina/license-service/actions/workflows/ci.yml/badge.svg)](https://github.com/lucalamattina/license-service/actions/workflows/ci.yml)
+
 A small TypeScript REST service for issuing, validating, and revoking software licenses across a fictional product catalog. Built as a learning project.
 
 The canonical design document is [DESIGN.md](DESIGN.md). Architectural decisions live in [docs/adr/](docs/adr/). Detailed transaction algorithms live in [docs/algorithms/](docs/algorithms/).
@@ -125,14 +127,17 @@ All single-resource endpoints return a bare object; collection endpoints wrap th
 | `npm start`           | Start the server (no reload, still via `tsx`)                 |
 | `npm run build`       | Compile TypeScript to `dist/`                                 |
 | `npm run start:prod`  | Run the compiled output (`node dist/index.js`)                |
-| `npm test`            | Run the Vitest suite once                                     |
-| `npm run test:watch`  | Run Vitest in watch mode                                      |
-| `npm run typecheck`   | Run `tsc --noEmit`                                            |
-| `npm run lint`        | Run ESLint                                                    |
-| `npm run format`      | Run Prettier in write mode                                    |
-| `npm run db:generate` | Generate a Drizzle migration from `src/db/schema.ts`          |
-| `npm run db:migrate`  | Apply pending migrations to the dev DB                        |
-| `npm run db:reset`    | Drop + recreate the dev DB, re-apply migrations               |
+| `npm test`               | Run the full Vitest suite                                  |
+| `npm run test:unit`      | Run only the pure-unit suite (no DB/Redis needed)          |
+| `npm run test:integration` | Run only the integration suite (requires Postgres + Redis) |
+| `npm run test:watch`     | Run Vitest in watch mode                                   |
+| `npm run typecheck`      | Run `tsc --noEmit`                                         |
+| `npm run lint`           | Run ESLint                                                 |
+| `npm run format`         | Run Prettier in write mode                                 |
+| `npm run db:generate`    | Generate a Drizzle migration from `src/db/schema.ts`       |
+| `npm run db:migrate`     | Apply pending migrations to the dev DB                     |
+| `npm run db:migrate:test`| Create (if missing) and migrate the **test** DB            |
+| `npm run db:reset`       | Drop + recreate the dev DB, re-apply migrations            |
 
 ## Project layout
 
@@ -171,6 +176,36 @@ scripts/               CLI wrappers (db migrate / reset)
 tests/                 Vitest suites: foundation unit + integration
 ```
 
+## Tests
+
+**141 tests across 17 files**, split into two suites:
+
+| Suite       | Files | Tests | What it covers                                                                                                                                                                              |
+| ----------- | ----- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Unit        | 5     | 34    | Pure functions only: `ApiError`, the error-to-response mapper, the `wrapList` envelope helper, the license-state-machine predicates, the email-normalisation Zod schema. No DB, no HTTP boot, no Redis. |
+| Integration | 12    | 107   | Real Postgres + Redis. Every route exercised end-to-end via `app.inject()`, the partial unique index, cascade deletes, the `expire-licenses` worker, `/ready`, `/metrics`, and two race tests run 30 iterations each. |
+
+Integration tests rely on `TEST_DATABASE_URL` and `TEST_REDIS_URL` (defaults match `docker-compose.yml`). Test files run sequentially (`fileParallelism: false`) so they can share the same test DB; data is truncated between cases by [tests/helpers/db.ts](tests/helpers/db.ts).
+
+Run a suite directly:
+
+```
+npm run test:unit          # ~1s, no services needed
+npm run test:integration   # ~15s, needs `docker compose up -d` first
+npm test                   # both
+```
+
 ## CI
 
-[.github/workflows/ci.yml](.github/workflows/ci.yml) runs on every push and PR. Two jobs: `test` (lint + typecheck + Vitest + build, against ephemeral Postgres/Redis service containers) and `docker-build` (verifies the production image builds with BuildKit caching).
+[.github/workflows/ci.yml](.github/workflows/ci.yml) runs on every push and pull request against `main`, with `concurrency` set so a new commit cancels older in-progress runs. Six jobs run in parallel:
+
+| Job                 | What it does                                                                          |
+| ------------------- | ------------------------------------------------------------------------------------- |
+| `lint`              | `npm ci` + `npm run lint`                                                             |
+| `typecheck`         | `npm ci` + `npm run typecheck`                                                        |
+| `unit-tests`        | `npm ci` + `npm run test:unit` — no services                                          |
+| `integration-tests` | `npm ci` + `npm run db:migrate:test` + `npm run test:integration`, against PostgreSQL 16 and Redis 7 service containers |
+| `build`             | `npm ci` + `npm run build` — proves the production TypeScript compile is clean        |
+| `docker-build`      | `docker buildx build` with GHA cache — proves the runtime image still assembles      |
+
+Node 20 across the board. `npm ci` (not `npm install`) is used everywhere, with `actions/setup-node`'s `cache: 'npm'`. Permissions are scoped to `contents: read`.
