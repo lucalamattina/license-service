@@ -2,6 +2,7 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import type { Redis } from 'ioredis';
 import type { Database } from './db/client.js';
 import { buildLoggerOptions } from './plugins/logger.js';
+import { registerCors } from './plugins/cors.js';
 import { registerErrorHandler } from './plugins/error-handler.js';
 import { registerMetricsRoute } from './plugins/metrics.js';
 import { registerZod } from './plugins/zod.js';
@@ -21,6 +22,7 @@ export async function buildServer(options: ServerOptions): Promise<FastifyInstan
   });
 
   await registerZod(app);
+  await registerCors(app);
   await registerErrorHandler(app);
   await registerHealthRoutes(app);
   await registerReadinessRoute(app, options);

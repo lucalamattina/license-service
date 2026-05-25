@@ -43,6 +43,18 @@ docker compose --profile full-stack up --build
 
 This starts Postgres, Redis, and the API in one shot. The API container runs migrations on boot (`RUN_MIGRATIONS_ON_BOOT=true`), so no manual migrate step is needed.
 
+### CORS
+
+The API is locked down by an origin allowlist (`@fastify/cors`). With nothing configured, browser requests from `http://localhost:5173` are allowed — that's the companion [dashboard](https://github.com/lucalamattina/license-service-dashboard)'s Vite dev server.
+
+Configure via `CORS_ALLOWED_ORIGINS`, comma-separated. Entries may use `*` as a wildcard for a single subdomain label (it does **not** cross dots, so `https://*.vercel.app` matches `foo.vercel.app` but not `foo.bar.vercel.app`):
+
+```
+CORS_ALLOWED_ORIGINS=http://localhost:5173,https://license-service-dashboard.vercel.app,https://license-service-dashboard-*.vercel.app
+```
+
+The third entry above is what handles Vercel preview deploys (each preview gets a hash-suffixed subdomain). Requests with no `Origin` header (curl, server-to-server health probes) are allowed unconditionally — CORS only applies to browsers.
+
 ## Design Decisions
 
 ### License state machine
@@ -160,8 +172,10 @@ src/
     errors.ts          ApiError class + error code union
     error-mapper.ts    pure unknown -> { status, body } mapper
     response.ts        wrapList() list envelope helper
+    cors-allowlist.ts  parseAllowlist() + buildOriginMatcher() (glob-aware)
   plugins/
     logger.ts          pino configuration
+    cors.ts            @fastify/cors registration, env-driven allowlist
     error-handler.ts   Fastify setErrorHandler wiring
     zod.ts             Zod validator/serializer wiring
     metrics.ts         prom-client registry, counters, GET /metrics route
