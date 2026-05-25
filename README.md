@@ -43,6 +43,51 @@ docker compose --profile full-stack up --build
 
 This starts Postgres, Redis, and the API in one shot. The API container runs migrations on boot (`RUN_MIGRATIONS_ON_BOOT=true`), so no manual migrate step is needed.
 
+### Deploying to Heroku
+
+The repo ships a [heroku.yml](heroku.yml) so Heroku's **container stack** builds the existing [Dockerfile](Dockerfile) on every `git push heroku main` — no buildpack, no `Procfile`, no separate build pipeline.
+
+**One-time setup** (run from the repo root after `heroku login`):
+
+```bash
+# Create the app on the container stack
+heroku create your-app-name --stack container
+
+# Add managed Postgres and Redis (paid: ~$5/mo + ~$3/mo at the cheapest tiers)
+heroku addons:create heroku-postgresql:essential-0
+heroku addons:create heroku-redis:mini
+
+# Required env: SSL for the Heroku-Postgres self-signed cert, migrations on boot,
+# and your dashboard's origin for CORS.
+heroku config:set NODE_ENV=production
+heroku config:set DATABASE_SSL=true
+heroku config:set RUN_MIGRATIONS_ON_BOOT=true
+heroku config:set CORS_ALLOWED_ORIGINS=https://your-dashboard.vercel.app,https://your-dashboard-*.vercel.app
+```
+
+**Deploy:**
+
+```bash
+git push heroku main
+```
+
+Heroku builds the Dockerfile, releases the image as the `web` dyno, the container starts, `RUN_MIGRATIONS_ON_BOOT` applies any pending migrations against the addon-provisioned Postgres, then the Fastify server binds to Heroku's injected `$PORT`. `DATABASE_URL` and `REDIS_URL` are set automatically by the addons — no manual config.
+
+**Verify:**
+
+```bash
+heroku open                       # opens the app URL in your browser
+curl https://your-app-name.herokuapp.com/health
+curl https://your-app-name.herokuapp.com/ready    # 200 with checks: { postgres: ok, redis: ok }
+heroku logs --tail
+```
+
+**Notes:**
+
+- The Heroku Postgres add-on uses TLS with a self-signed cert; `DATABASE_SSL=true` flips on `rejectUnauthorized: false` in the Postgres driver (see [src/db/postgres-options.ts](src/db/postgres-options.ts)). Without it, the connection fails with a TLS error.
+- One web dyno runs both the HTTP server *and* the BullMQ worker (matches local). For multi-dyno deploys, switch migrations to a Heroku release-phase step (so multiple boots don't race) and split the worker into its own process type — both noted in DESIGN.md's "What I'd do differently in production" section.
+- Costs at the cheapest tiers: Eco dyno $5/mo (sleeps after 30 min idle) or Basic $7/mo (always on) + Postgres essential-0 $5/mo + Redis mini $3/mo ≈ $13–15/mo total.
+
 ### CORS
 
 The API is locked down by an origin allowlist (`@fastify/cors`). With nothing configured, browser requests from `http://localhost:5173` are allowed — that's the companion [dashboard](https://github.com/lucalamattina/license-service-dashboard)'s Vite dev server.
