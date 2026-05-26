@@ -2,11 +2,11 @@
 
 [![CI](https://github.com/lucalamattina/license-service/actions/workflows/ci.yml/badge.svg)](https://github.com/lucalamattina/license-service/actions/workflows/ci.yml)
 
-A small TypeScript REST service for issuing, validating, and revoking software licenses across a fictional product catalog. Built as a learning project.
+A small TypeScript REST service for issuing, validating, and revoking software licenses across a fictional product catalog.
 
 **Live demo:** <https://llamattina-license-service-5c6fae72379f.herokuapp.com> (deployed on Heroku, container stack, with Heroku Postgres + Heroku Redis add-ons; seeded with 3 users, 3 products, and 9 active licenses)
 
-**Dashboard:** there's a companion SPA at <https://license-service-dashboard.vercel.app/licenses> ([repo](https://github.com/lucalamattina/license-service-dashboard)) that calls this backend from the browser. It's a small artifact for visualising the API in action.
+**Dashboard:** there's a companion SPA at <https://license-service-dashboard.vercel.app/licenses> ([repo](https://github.com/lucalamattina/license-service-dashboard)) that calls this backend from the browser. Its [walkthrough of the three license states](https://github.com/lucalamattina/license-service-dashboard#see-all-three-license-states) creates a license that expires in real time, so you can watch the BullMQ scan job flip it from Active to Expired without writing any code.
 
 The canonical design document is [DESIGN.md](DESIGN.md). Architectural decisions live in [docs/adr/](docs/adr/). Detailed transaction algorithms live in [docs/algorithms/](docs/algorithms/).
 
