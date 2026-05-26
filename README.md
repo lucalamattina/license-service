@@ -4,7 +4,70 @@
 
 A small TypeScript REST service for issuing, validating, and revoking software licenses across a fictional product catalog. Built as a learning project.
 
+**Live demo:** <https://llamattina-license-service-5c6fae72379f.herokuapp.com> (deployed on Heroku, container stack, with Heroku Postgres + Heroku Redis add-ons; seeded with 3 users, 3 products, and 9 active licenses)
+
 The canonical design document is [DESIGN.md](DESIGN.md). Architectural decisions live in [docs/adr/](docs/adr/). Detailed transaction algorithms live in [docs/algorithms/](docs/algorithms/).
+
+## Try it from your terminal
+
+Every example below hits the deployed instance — no setup required. The API responds in JSON for success and structured-error JSON for failures.
+
+```bash
+BASE=https://llamattina-license-service-5c6fae72379f.herokuapp.com
+
+# 1) Liveness and readiness — /ready actively pings both Postgres and Redis
+curl $BASE/health
+# → {"status":"ok"}
+
+curl $BASE/ready
+# → {"status":"ok","checks":{"postgres":"ok","redis":"ok"}}
+
+# 2) Prometheus-format observability — process defaults + four custom counters
+curl -s $BASE/metrics | grep -E "^(licenses_|license_validations_)"
+# → licenses_issued_total, licenses_revoked_total,
+#   licenses_expired_total{path="scan"|"validate"},
+#   license_validations_total{result="valid"|"invalid"}
+
+# 3) Browse the seeded data — single-resource returns a bare object,
+#    collections wrap in {"data":[...]} so pagination metadata can be added later
+curl -s $BASE/users
+curl -s $BASE/products
+curl -s $BASE/licenses
+
+# 4) Relationship endpoints honour the listing-semantics rule:
+#    "/users/{id}/licenses" returns ALL statuses (historical),
+#    "/users/{id}/products" returns only Active licenses (right-now view).
+USER_ID=$(curl -s $BASE/users | jq -r '.data[0].id')
+curl -s $BASE/users/$USER_ID/licenses
+curl -s $BASE/users/$USER_ID/products
+
+# 5) Validate a license — auto-transitions Active→Expired if past expires_at,
+#    in the same transaction, so the caller always sees the freshest state.
+LICENSE_ID=$(curl -s $BASE/licenses | jq -r '.data[0].id')
+curl -s -X POST $BASE/licenses/$LICENSE_ID/validate
+# → {"valid":true,"license":{"id":...,"status":"active",...}}
+
+# 6) Validation errors come back structured — field path + message + Zod code
+curl -s -X POST $BASE/users \
+  -H "Content-Type: application/json" \
+  -d '{"email":"not-an-email"}'
+# → {"error":"validation_error","message":"Request validation failed",
+#    "details":[{"path":["email"],"message":"Invalid email",...}]}
+
+# 7) The duplicate-active-license policy in action — re-issuing for the same
+#    (user, product) with worse-or-equal expiration returns 409 with a message
+#    that describes the conflict, not just the status text
+PRODUCT_ID=$(curl -s $BASE/products | jq -r '.data[0].id')
+curl -s -X POST $BASE/licenses \
+  -H "Content-Type: application/json" \
+  -d "{\"user_id\":\"$USER_ID\",\"product_id\":\"$PRODUCT_ID\",\"expires_at\":\"2026-12-31T23:59:59Z\"}"
+# → {"error":"duplicate_active_license","message":"User already holds an active
+#    license for this product with equal or later expiration (existing expires at ...)"}
+```
+
+> The `jq` pipes are optional — they just extract a UUID so the next command is copy-pasteable. Without `jq`, copy any `id` from the previous response by hand.
+
+The full endpoint reference is in the [API](#api) section.
 
 ## What it does
 
@@ -85,6 +148,7 @@ heroku logs --tail
 **Notes:**
 
 - The Heroku Postgres add-on uses TLS with a self-signed cert; `DATABASE_SSL=true` flips on `rejectUnauthorized: false` in the Postgres driver (see [src/db/postgres-options.ts](src/db/postgres-options.ts)). Without it, the connection fails with a TLS error.
+- The Heroku Redis add-on also terminates TLS with a self-signed cert (`REDIS_URL` comes back as `rediss://...`). [src/queue/connection.ts](src/queue/connection.ts) auto-detects the `rediss://` scheme and passes `tls: { rejectUnauthorized: false }` to both the standalone ioredis client and the BullMQ queue/worker connections — no env var needed. Local `redis://` is unaffected.
 - One web dyno runs both the HTTP server *and* the BullMQ worker (matches local). For multi-dyno deploys, switch migrations to a Heroku release-phase step (so multiple boots don't race) and split the worker into its own process type — both noted in DESIGN.md's "What I'd do differently in production" section.
 - Costs at the cheapest tiers: Eco dyno $5/mo (sleeps after 30 min idle) or Basic $7/mo (always on) + Postgres essential-0 $5/mo + Redis mini $3/mo ≈ $13–15/mo total.
 
@@ -206,6 +270,7 @@ src/
     schema.ts          Drizzle schema (users, products, licenses)
     client.ts          Drizzle client factory
     migrate.ts         programmatic migration runner
+    postgres-options.ts  env-driven SSL config (DATABASE_SSL=true for Heroku)
   domain/
     license-state.ts   pure state-machine predicates (canRevoke, shouldExpire)
   queue/
