@@ -6,6 +6,8 @@ A small TypeScript REST service for issuing, validating, and revoking software l
 
 **Live demo:** <https://llamattina-license-service-5c6fae72379f.herokuapp.com> (deployed on Heroku, container stack, with Heroku Postgres + Heroku Redis add-ons; seeded with 3 users, 3 products, and 9 active licenses)
 
+**Dashboard:** there's a tiny companion SPA at <https://license-service-dashboard.vercel.app/licenses> ([repo](https://github.com/lucalamattina/license-service-dashboard)) that calls this backend from the browser. It's a small artifact for visualising the API in action — not a separate project, just a thin Vite + React 19 viewer so a reviewer can click around instead of curling. The interesting work — design decisions, concurrency, tests, observability, deployment — all lives in this repo.
+
 The canonical design document is [DESIGN.md](DESIGN.md). Architectural decisions live in [docs/adr/](docs/adr/). Detailed transaction algorithms live in [docs/algorithms/](docs/algorithms/).
 
 ## Try it from your terminal
