@@ -6,31 +6,31 @@ A small TypeScript REST service for issuing, validating, and revoking software l
 
 **Live demo:** <https://llamattina-license-service-5c6fae72379f.herokuapp.com> (deployed on Heroku, container stack, with Heroku Postgres + Heroku Redis add-ons; seeded with 3 users, 3 products, and 9 active licenses)
 
-**Dashboard:** there's a tiny companion SPA at <https://license-service-dashboard.vercel.app/licenses> ([repo](https://github.com/lucalamattina/license-service-dashboard)) that calls this backend from the browser. It's a small artifact for visualising the API in action — not a separate project, just a thin Vite + React 19 viewer so a reviewer can click around instead of curling. The interesting work — design decisions, concurrency, tests, observability, deployment — all lives in this repo.
+**Dashboard:** there's a companion SPA at <https://license-service-dashboard.vercel.app/licenses> ([repo](https://github.com/lucalamattina/license-service-dashboard)) that calls this backend from the browser. It's a small artifact for visualising the API in action.
 
 The canonical design document is [DESIGN.md](DESIGN.md). Architectural decisions live in [docs/adr/](docs/adr/). Detailed transaction algorithms live in [docs/algorithms/](docs/algorithms/).
 
 ## Try it from your terminal
 
-Every example below hits the deployed instance — no setup required. The API responds in JSON for success and structured-error JSON for failures.
+Every example below hits the deployed instance, no setup required. The API responds in JSON for success and structured-error JSON for failures.
 
 ```bash
 BASE=https://llamattina-license-service-5c6fae72379f.herokuapp.com
 
-# 1) Liveness and readiness — /ready actively pings both Postgres and Redis
+# 1) Liveness and readiness. /ready actively pings both Postgres and Redis
 curl $BASE/health
 # → {"status":"ok"}
 
 curl $BASE/ready
 # → {"status":"ok","checks":{"postgres":"ok","redis":"ok"}}
 
-# 2) Prometheus-format observability — process defaults + four custom counters
+# 2) Prometheus-format observability: process defaults + four custom counters
 curl -s $BASE/metrics | grep -E "^(licenses_|license_validations_)"
 # → licenses_issued_total, licenses_revoked_total,
 #   licenses_expired_total{path="scan"|"validate"},
 #   license_validations_total{result="valid"|"invalid"}
 
-# 3) Browse the seeded data — single-resource returns a bare object,
+# 3) Browse the seeded data. Single-resource returns a bare object,
 #    collections wrap in {"data":[...]} so pagination metadata can be added later
 curl -s $BASE/users
 curl -s $BASE/products
@@ -43,20 +43,20 @@ USER_ID=$(curl -s $BASE/users | jq -r '.data[0].id')
 curl -s $BASE/users/$USER_ID/licenses
 curl -s $BASE/users/$USER_ID/products
 
-# 5) Validate a license — auto-transitions Active→Expired if past expires_at,
+# 5) Validate a license. Auto-transitions Active→Expired if past expires_at,
 #    in the same transaction, so the caller always sees the freshest state.
 LICENSE_ID=$(curl -s $BASE/licenses | jq -r '.data[0].id')
 curl -s -X POST $BASE/licenses/$LICENSE_ID/validate
 # → {"valid":true,"license":{"id":...,"status":"active",...}}
 
-# 6) Validation errors come back structured — field path + message + Zod code
+# 6) Validation errors come back structured, with field path, message, Zod code
 curl -s -X POST $BASE/users \
   -H "Content-Type: application/json" \
   -d '{"email":"not-an-email"}'
 # → {"error":"validation_error","message":"Request validation failed",
 #    "details":[{"path":["email"],"message":"Invalid email",...}]}
 
-# 7) The duplicate-active-license policy in action — re-issuing for the same
+# 7) The duplicate-active-license policy in action. Re-issuing for the same
 #    (user, product) with worse-or-equal expiration returns 409 with a message
 #    that describes the conflict, not just the status text
 PRODUCT_ID=$(curl -s $BASE/products | jq -r '.data[0].id')
@@ -67,7 +67,7 @@ curl -s -X POST $BASE/licenses \
 #    license for this product with equal or later expiration (existing expires at ...)"}
 ```
 
-> The `jq` pipes are optional — they just extract a UUID so the next command is copy-pasteable. Without `jq`, copy any `id` from the previous response by hand.
+> The `jq` pipes are optional; they just extract a UUID so the next command is copy-pasteable. Without `jq`, copy any `id` from the previous response by hand.
 
 The full endpoint reference is in the [API](#api) section.
 
@@ -110,7 +110,7 @@ This starts Postgres, Redis, and the API in one shot. The API container runs mig
 
 ### Deploying to Heroku
 
-The repo ships a [heroku.yml](heroku.yml) so Heroku's **container stack** builds the existing [Dockerfile](Dockerfile) on every `git push heroku main` — no buildpack, no `Procfile`, no separate build pipeline.
+The repo ships a [heroku.yml](heroku.yml) so Heroku's **container stack** builds the existing [Dockerfile](Dockerfile) on every `git push heroku main`. No buildpack, no `Procfile`, no separate build pipeline.
 
 **One-time setup** (run from the repo root after `heroku login`):
 
@@ -136,7 +136,7 @@ heroku config:set CORS_ALLOWED_ORIGINS=https://your-dashboard.vercel.app,https:/
 git push heroku main
 ```
 
-Heroku builds the Dockerfile, releases the image as the `web` dyno, the container starts, `RUN_MIGRATIONS_ON_BOOT` applies any pending migrations against the addon-provisioned Postgres, then the Fastify server binds to Heroku's injected `$PORT`. `DATABASE_URL` and `REDIS_URL` are set automatically by the addons — no manual config.
+Heroku builds the Dockerfile, releases the image as the `web` dyno, the container starts, `RUN_MIGRATIONS_ON_BOOT` applies any pending migrations against the addon-provisioned Postgres, then the Fastify server binds to Heroku's injected `$PORT`. `DATABASE_URL` and `REDIS_URL` are set automatically by the addons, no manual config needed.
 
 **Verify:**
 
@@ -150,13 +150,13 @@ heroku logs --tail
 **Notes:**
 
 - The Heroku Postgres add-on uses TLS with a self-signed cert; `DATABASE_SSL=true` flips on `rejectUnauthorized: false` in the Postgres driver (see [src/db/postgres-options.ts](src/db/postgres-options.ts)). Without it, the connection fails with a TLS error.
-- The Heroku Redis add-on also terminates TLS with a self-signed cert (`REDIS_URL` comes back as `rediss://...`). [src/queue/connection.ts](src/queue/connection.ts) auto-detects the `rediss://` scheme and passes `tls: { rejectUnauthorized: false }` to both the standalone ioredis client and the BullMQ queue/worker connections — no env var needed. Local `redis://` is unaffected.
-- One web dyno runs both the HTTP server *and* the BullMQ worker (matches local). For multi-dyno deploys, switch migrations to a Heroku release-phase step (so multiple boots don't race) and split the worker into its own process type — both noted in DESIGN.md's "What I'd do differently in production" section.
+- The Heroku Redis add-on also terminates TLS with a self-signed cert (`REDIS_URL` comes back as `rediss://...`). [src/queue/connection.ts](src/queue/connection.ts) auto-detects the `rediss://` scheme and passes `tls: { rejectUnauthorized: false }` to both the standalone ioredis client and the BullMQ queue/worker connections, with no env var needed. Local `redis://` is unaffected.
+- One web dyno runs both the HTTP server *and* the BullMQ worker (matches local). For multi-dyno deploys, switch migrations to a Heroku release-phase step (so multiple boots don't race) and split the worker into its own process type. Both are noted in DESIGN.md's "What I'd do differently in production" section.
 - Costs at the cheapest tiers: Eco dyno $5/mo (sleeps after 30 min idle) or Basic $7/mo (always on) + Postgres essential-0 $5/mo + Redis mini $3/mo ≈ $13–15/mo total.
 
 ### CORS
 
-The API is locked down by an origin allowlist (`@fastify/cors`). With nothing configured, browser requests from `http://localhost:5173` are allowed — that's the companion [dashboard](https://github.com/lucalamattina/license-service-dashboard)'s Vite dev server.
+The API is locked down by an origin allowlist (`@fastify/cors`). With nothing configured, browser requests from `http://localhost:5173` are allowed (that's the companion [dashboard](https://github.com/lucalamattina/license-service-dashboard)'s Vite dev server).
 
 Configure via `CORS_ALLOWED_ORIGINS`, comma-separated. Entries may use `*` as a wildcard for a single subdomain label (it does **not** cross dots, so `https://*.vercel.app` matches `foo.vercel.app` but not `foo.bar.vercel.app`):
 
@@ -164,7 +164,7 @@ Configure via `CORS_ALLOWED_ORIGINS`, comma-separated. Entries may use `*` as a 
 CORS_ALLOWED_ORIGINS=http://localhost:5173,https://license-service-dashboard.vercel.app,https://license-service-dashboard-*.vercel.app
 ```
 
-The third entry above is what handles Vercel preview deploys (each preview gets a hash-suffixed subdomain). Requests with no `Origin` header (curl, server-to-server health probes) are allowed unconditionally — CORS only applies to browsers.
+The third entry above is what handles Vercel preview deploys (each preview gets a hash-suffixed subdomain). Requests with no `Origin` header (curl, server-to-server health probes) are allowed unconditionally; CORS only applies to browsers.
 
 ## Design Decisions
 
@@ -196,9 +196,9 @@ The race-safety invariant ([DESIGN.md](DESIGN.md) "Race-safety invariant"): both
 Both are TypeScript-native ORMs with a similar surface, but Drizzle is much closer to SQL and adds less between you and the database. Concretely:
 
 - **Schema-as-code in actual SQL terms.** [src/db/schema.ts](src/db/schema.ts) maps almost 1:1 to the generated migration; Prisma's schema DSL adds an extra layer to learn (and to debug when it doesn't translate the way you expect).
-- **First-class support for `partial unique indexes` like the one this project depends on** — the `WHERE status='active'` filter is a one-line `uniqueIndex(...).where(sql\`...\`)` in Drizzle. Prisma added partial-index support late and it's still less idiomatic.
-- **Raw SQL escape hatch is trivial.** `db.execute(sql\`SELECT 1\`)` works without ceremony — used by the `/ready` health check and the scan job's `now()` comparisons.
-- **No code generation step.** Drizzle infers types directly from the schema definitions, so `npm run db:generate` is purely about producing migration SQL — there's no `prisma generate` step that has to stay in sync.
+- **First-class support for `partial unique indexes` like the one this project depends on.** The `WHERE status='active'` filter is a one-line `uniqueIndex(...).where(sql\`...\`)` in Drizzle. Prisma added partial-index support late and it's still less idiomatic.
+- **Raw SQL escape hatch is trivial.** `db.execute(sql\`SELECT 1\`)` works without ceremony; used by the `/ready` health check and the scan job's `now()` comparisons.
+- **No code generation step.** Drizzle infers types directly from the schema definitions, so `npm run db:generate` is purely about producing migration SQL, with no `prisma generate` step that has to stay in sync.
 
 For a service whose central design moment is a Postgres-specific concurrency pattern, Drizzle's "you write SQL, we type it" stance is a better fit than Prisma's higher-level abstraction.
 
@@ -207,7 +207,7 @@ For a service whose central design moment is a Postgres-specific concurrency pat
 [DESIGN.md](DESIGN.md) carries the full list. The biggest items:
 
 - **Auth/authz.** The API is identity-agnostic (every endpoint takes `user_id` as a parameter). In production, users would only see their own licenses and an admin role would be required for cross-user operations.
-- **Split the worker out of the API process.** Today the BullMQ worker lives in the same Node process as the HTTP server (see [src/index.ts](src/index.ts)). Production would split them — independent scaling, blast-radius isolation, cleaner shutdown. The application code is already factored cleanly enough that the worker only needs the database connection and the Redis URL.
+- **Split the worker out of the API process.** Today the BullMQ worker lives in the same Node process as the HTTP server (see [src/index.ts](src/index.ts)). Production would split them: independent scaling, blast-radius isolation, cleaner shutdown. The application code is already factored cleanly enough that the worker only needs the database connection and the Redis URL.
 - **Soft-delete users, anonymise their licenses.** Today user/product deletion cascades to licenses, which destroys audit history.
 - **Idempotency keys** on `POST /licenses` so retries don't double-issue.
 - **Rate limiting**, especially on `/licenses/:id/validate` which is the hot path.
@@ -219,8 +219,8 @@ All single-resource endpoints return a bare object; collection endpoints wrap th
 
 | Method | Path                              | Purpose                                                          |
 | ------ | --------------------------------- | -----------------------------------------------------------------|
-| GET    | `/health`                         | Liveness — 200 as long as the process is alive                   |
-| GET    | `/ready`                          | Readiness — 200 only if Postgres + Redis are reachable, else 503 |
+| GET    | `/health`                         | Liveness check; 200 as long as the process is alive              |
+| GET    | `/ready`                          | Readiness check; 200 only if Postgres + Redis are reachable, else 503 |
 | GET    | `/metrics`                        | Prometheus exposition format                                     |
 | POST   | `/users`                          | Create a user (email is normalised: trim + lowercase)            |
 | GET    | `/users`                          | List all users                                                   |
@@ -329,9 +329,9 @@ npm test                   # both
 | ------------------- | ------------------------------------------------------------------------------------- |
 | `lint`              | `npm ci` + `npm run lint`                                                             |
 | `typecheck`         | `npm ci` + `npm run typecheck`                                                        |
-| `unit-tests`        | `npm ci` + `npm run test:unit` — no services                                          |
+| `unit-tests`        | `npm ci` + `npm run test:unit` (no services required)                                 |
 | `integration-tests` | `npm ci` + `npm run db:migrate:test` + `npm run test:integration`, against PostgreSQL 16 and Redis 7 service containers |
-| `build`             | `npm ci` + `npm run build` — proves the production TypeScript compile is clean        |
-| `docker-build`      | `docker buildx build` with GHA cache — proves the runtime image still assembles      |
+| `build`             | `npm ci` + `npm run build`; proves the production TypeScript compile is clean         |
+| `docker-build`      | `docker buildx build` with GHA cache; proves the runtime image still assembles        |
 
 Node 20 across the board. `npm ci` (not `npm install`) is used everywhere, with `actions/setup-node`'s `cache: 'npm'`. Permissions are scoped to `contents: read`.
