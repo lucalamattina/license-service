@@ -1,20 +1,31 @@
-import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { BackendClient } from './backend-client.js';
+import { registerTools } from './tools/index.js';
 
 export const SERVER_NAME = 'license-service-mcp';
 export const SERVER_VERSION = '0.1.0';
 
+export interface ServerDeps {
+  backend: BackendClient;
+}
+
 /**
- * Builds the MCP `Server` instance. Phase 0 wires nothing — no tools, no
- * resources, no prompts. The declared capabilities object is empty; later
- * phases will add `tools`, `resources`, and `prompts` keys as primitives land.
+ * Builds the MCP server. The `McpServer` (the high-level SDK wrapper) is used
+ * because its `registerTool` / `registerResource` / `registerPrompt` methods
+ * auto-declare capabilities, so the constructor's `capabilities: {}` is just a
+ * floor that gets added to as primitives are registered.
  *
  * The server is returned uncoupled to any transport. The caller decides whether
  * to connect a stdio transport (production, see `index.ts`) or an in-memory
  * transport (tests).
  */
-export function createServer(): Server {
-  return new Server(
+export function createServer(deps: ServerDeps): McpServer {
+  const server = new McpServer(
     { name: SERVER_NAME, version: SERVER_VERSION },
     { capabilities: {} },
   );
+
+  registerTools(server, deps);
+
+  return server;
 }

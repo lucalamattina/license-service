@@ -1,5 +1,9 @@
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { BackendClient } from './backend-client.js';
 import { createServer, SERVER_NAME } from './server.js';
+
+const DEFAULT_BACKEND_BASE_URL =
+  'https://llamattina-license-service-5c6fae72379f.herokuapp.com';
 
 // stdout is the MCP protocol channel (stdio transport speaks JSON-RPC over it).
 // All diagnostics go to stderr so we never corrupt the protocol stream.
@@ -8,7 +12,11 @@ function log(msg: string): void {
 }
 
 async function main(): Promise<void> {
-  const server = createServer();
+  const baseUrl = process.env.LICENSE_SERVICE_BASE_URL ?? DEFAULT_BACKEND_BASE_URL;
+  log(`backend base url: ${baseUrl}`);
+
+  const backend = new BackendClient({ baseUrl });
+  const server = createServer({ backend });
   const transport = new StdioServerTransport();
 
   let shuttingDown = false;
