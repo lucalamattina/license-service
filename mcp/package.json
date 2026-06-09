@@ -12,9 +12,11 @@
     "start": "tsx src/index.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "eval": "tsx evals/runner.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.103.0",
     "@modelcontextprotocol/sdk": "^1.0.0",
     "zod": "^4.0.0"
   },
