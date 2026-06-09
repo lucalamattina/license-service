@@ -258,7 +258,7 @@ The MCP server exposes **one** prompt: `audit_user_licenses`. The decision to in
 | **Arguments** | `user_id` (uuid string)                                                                          |
 | **Purpose**   | Standardise the shape of a license audit so reports generated from different conversations look consistent. |
 
-The expanded prompt body the server returns:
+The expanded prompt body the server returns (the canonical text lives in [`mcp/src/prompts.ts`](src/prompts.ts) — the version below is for reference and may drift slightly during development; the test suite pins the runtime body to the code):
 
 > Produce a license audit for user `{user_id}`. Format the response as:
 >

@@ -34,12 +34,12 @@ describe('server handshake + declared capabilities', () => {
     expect(serverInfo?.version).toBe(SERVER_VERSION);
 
     // Capabilities are added cumulatively as each phase registers primitives.
-    // Phase 2 adds `tools`, Phase 5 adds `resources`. Phase 6 will add `prompts`.
+    // Phase 2 adds `tools`, Phase 5 adds `resources`, Phase 6 adds `prompts`.
     const caps = client.getServerCapabilities();
     expect(caps).toBeDefined();
     expect(caps?.tools).toBeDefined();
     expect(caps?.resources).toBeDefined();
-    expect(caps?.prompts).toBeUndefined();
+    expect(caps?.prompts).toBeDefined();
 
     await client.close();
     await server.close();

@@ -1,5 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { BackendClient } from './backend-client.js';
+import { registerPrompts } from './prompts.js';
 import { registerResources } from './resources.js';
 import { registerTools } from './tools/index.js';
 
@@ -28,6 +29,7 @@ export function createServer(deps: ServerDeps): McpServer {
 
   registerTools(server, deps);
   registerResources(server, deps);
+  registerPrompts(server);
 
   return server;
 }
