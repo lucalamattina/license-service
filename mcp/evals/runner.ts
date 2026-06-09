@@ -17,7 +17,7 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 import { runAgentLoop } from './agent-loop.js';
-import { listUserLicensesWithEmailLookup } from './cases/list-user-licenses-with-email-lookup.js';
+import { ALL_CASES } from './cases/index.js';
 import { CostTracker } from './cost-tracker.js';
 import type { CaseResult, EvalCase, SampleResult } from './types.js';
 
@@ -27,7 +27,7 @@ const DEFAULT_COST_CAP_USD = 5.0;
 const DEFAULT_SAMPLES = 5;
 const DEFAULT_PASS_THRESHOLD = 0.8;
 
-const CASES: EvalCase[] = [listUserLicensesWithEmailLookup];
+const CASES: EvalCase[] = ALL_CASES;
 
 function log(msg: string): void {
   process.stdout.write(msg + '\n');
@@ -76,6 +76,33 @@ function assertSample(
         passed: false,
         reason: `tool call #${i + 1} (${actual.name}) failed argsMatch predicate`,
       };
+    }
+  }
+
+  if (caseSpec.forbiddenTools) {
+    for (const name of caseSpec.forbiddenTools) {
+      if (toolCalls.some((c) => c.name === name)) {
+        return {
+          passed: false,
+          reason: `forbidden tool ${name} was called`,
+        };
+      }
+    }
+  }
+
+  if (caseSpec.maxCallsByTool) {
+    const counts = new Map<string, number>();
+    for (const c of toolCalls) {
+      counts.set(c.name, (counts.get(c.name) ?? 0) + 1);
+    }
+    for (const [name, cap] of Object.entries(caseSpec.maxCallsByTool)) {
+      const got = counts.get(name) ?? 0;
+      if (got > cap) {
+        return {
+          passed: false,
+          reason: `tool ${name} called ${got} times, cap is ${cap}`,
+        };
+      }
     }
   }
 
@@ -134,11 +161,12 @@ async function runCase(
 
     if (setupOk) {
       try {
+        const promptText = typeof caseSpec.prompt === 'function' ? caseSpec.prompt() : caseSpec.prompt;
         const loop = await runAgentLoop({
           anthropic,
           model: MODEL,
           backendBaseUrl: backendUrl,
-          prompt: caseSpec.prompt,
+          prompt: promptText,
           costTracker,
         });
         const assertion = assertSample(caseSpec, loop.toolCalls, loop.finalText);
