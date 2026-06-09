@@ -8,6 +8,8 @@ A small TypeScript REST service for issuing, validating, and revoking software l
 
 **Dashboard:** there's a companion SPA at <https://license-service-dashboard.vercel.app/licenses> ([repo](https://github.com/lucalamattina/license-service-dashboard)) that calls this backend from the browser. Its [walkthrough of the three license states](https://github.com/lucalamattina/license-service-dashboard#see-all-three-license-states) creates a license that expires in real time, so you can watch the BullMQ scan job flip it from Active to Expired without writing any code.
 
+**MCP layer:** [mcp/](mcp/) ships a Model Context Protocol server that exposes the backend to AI clients (Claude Code, Claude Desktop, Cursor). An agent can resolve users by email, audit licence history, and run the full lifecycle without writing HTTP code. Quick-start in [mcp/README.md](mcp/README.md); design rationale and eval strategy in [mcp/MCP_DESIGN.md](mcp/MCP_DESIGN.md).
+
 The canonical design document is [DESIGN.md](DESIGN.md). Architectural decisions live in [docs/adr/](docs/adr/). Detailed transaction algorithms live in [docs/algorithms/](docs/algorithms/).
 
 ## Try it from your terminal
@@ -300,6 +302,7 @@ docs/adr/              Architectural decision records
 docs/algorithms/       Detailed transaction algorithms
 scripts/               CLI wrappers (db migrate / reset)
 tests/                 Vitest suites: foundation unit + integration
+mcp/                   separate-package MCP server + eval harness (see mcp/README.md)
 ```
 
 ## Tests
