@@ -41,6 +41,17 @@ export async function listUsers(db: Database): Promise<User[]> {
   return db.select().from(users);
 }
 
+/**
+ * Find semantics: returns the user if the (already-normalised) email matches,
+ * or null if no user exists with that email. Not finding the user is NOT an
+ * error here — it's a normal answer to a lookup question. Callers (notably the
+ * MCP layer) rely on this being a 200 with a nullable body rather than a 404.
+ */
+export async function findUserByEmail(db: Database, email: string): Promise<User | null> {
+  const [user] = await db.select().from(users).where(eq(users.email, email));
+  return user ?? null;
+}
+
 export async function deleteUser(db: Database, id: string): Promise<void> {
   const deleted = await db.delete(users).where(eq(users.id, id)).returning({ id: users.id });
   if (deleted.length === 0) {

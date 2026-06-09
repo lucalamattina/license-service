@@ -136,6 +136,60 @@ describe('Users routes', () => {
     });
   });
 
+  describe('GET /users/by-email', () => {
+    it('returns { user: {...} } when an exact match exists', async () => {
+      const created = (
+        await app.inject({
+          method: 'POST',
+          url: '/users',
+          payload: { email: 'lookup@x.com' },
+        })
+      ).json();
+
+      const res = await app.inject({ method: 'GET', url: '/users/by-email?email=lookup@x.com' });
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({ user: { id: created.id, email: 'lookup@x.com' } });
+    });
+
+    it('returns { user: null } and 200 (not 404) when no user matches', async () => {
+      const res = await app.inject({
+        method: 'GET',
+        url: '/users/by-email?email=ghost@x.com',
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({ user: null });
+    });
+
+    it('matches case-insensitively (email is normalised on both write and read)', async () => {
+      await app.inject({
+        method: 'POST',
+        url: '/users',
+        payload: { email: 'MixedCase@X.COM' },
+      });
+      const res = await app.inject({
+        method: 'GET',
+        url: '/users/by-email?email=mixedcase@x.com',
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.json().user.email).toBe('mixedcase@x.com');
+    });
+
+    it('returns 400 validation_error when the email query param is missing', async () => {
+      const res = await app.inject({ method: 'GET', url: '/users/by-email' });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error).toBe('validation_error');
+    });
+
+    it('returns 400 validation_error when the email query param is malformed', async () => {
+      const res = await app.inject({
+        method: 'GET',
+        url: '/users/by-email?email=not-an-email',
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error).toBe('validation_error');
+    });
+  });
+
   describe('DELETE /users/:id', () => {
     it('returns 204 and removes the user', async () => {
       const created = (

@@ -166,6 +166,23 @@ Response: 200 OK
 }
 
 
+GET /users/by-email?email={email}
+Find semantics: returns the user whose email matches (case-insensitive — emails are normalised to lowercase on both write and read), or null if no user has that email. "User not found" is NOT a 404; it is a successful 200 with a nullable body. The principled lookup path used by the MCP layer's find_user_by_email tool so the MCP server never has to call GET /users (which would expose every email in the system).
+
+Response: 200 OK (on match)
+{
+    "user": {
+        "id": "user_uuid",
+        "email": "user@email.com"
+    }
+}
+
+Response: 200 OK (on no match)
+{
+    "user": null
+}
+
+
 GET /users/{user_id}/licenses
 Get a user's licences
 

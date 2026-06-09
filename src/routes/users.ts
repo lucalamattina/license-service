@@ -1,9 +1,10 @@
 import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
-import { createUserBody, userIdParams } from '../schemas/users.js';
+import { createUserBody, userByEmailQuery, userIdParams } from '../schemas/users.js';
 import {
   createUser,
   deleteUser,
+  findUserByEmail,
   getUserById,
   listUsers,
 } from '../services/users.js';
@@ -27,6 +28,19 @@ export async function registerUserRoutes(app: FastifyInstance, db: Database): Pr
     const items = await listUsers(db);
     return wrapList(items);
   });
+
+  // GET /users/by-email?email=foo@bar.com → { user: { id, email } | null }, 200 either way.
+  // Find semantics: "user not present" is a successful answer, not a 404. Used by the
+  // MCP layer's find_user_by_email tool as a direct passthrough so the MCP server never
+  // has to dump every user via the list endpoint.
+  f.get(
+    '/users/by-email',
+    { schema: { querystring: userByEmailQuery } },
+    async (req) => {
+      const user = await findUserByEmail(db, req.query.email);
+      return { user };
+    },
+  );
 
   f.get('/users/:id', { schema: { params: userIdParams } }, async (req) => {
     return getUserById(db, req.params.id);
