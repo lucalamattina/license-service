@@ -13,7 +13,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "eval": "tsx evals/runner.ts"
+    "eval": "tsx --env-file-if-exists=.env evals/runner.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.103.0",

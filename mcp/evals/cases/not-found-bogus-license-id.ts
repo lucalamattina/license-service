@@ -35,7 +35,9 @@ export const notFoundBogusLicenseId: EvalCase = {
   // The retry guard: validating a not-found id twice is the failure mode.
   maxCallsByTool: { validate_license: 1 },
 
-  // The agent should say the license doesn't exist — "not found" / "doesn't
-  // exist" / "no such" / "missing".
-  finalMessage: /(not found|doesn'?t exist|no such|missing|does not exist)/i,
+  // The agent should say the license doesn't exist. Phrasings observed in
+  // the wild: "not found", "no license was found", "doesn't exist", "no such".
+  // The "no .* found" branch tolerates a noun between the negation and the
+  // verb ("no license was found", "no record found").
+  finalMessage: /(no .{0,40}found|not found|doesn'?t exist|no such|missing|does not exist)/i,
 };

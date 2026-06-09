@@ -98,8 +98,10 @@ export async function deleteUserIfExists(baseUrl: string, email: string): Promis
 export async function deleteProductsByNames(baseUrl: string, names: string[]): Promise<void> {
   if (names.length === 0) return;
   const wanted = new Set(names);
-  const result = await call<{ products: ProductRecord[] }>(baseUrl, 'GET', '/products');
-  for (const p of result.products) {
+  // Backend list endpoints all use the `wrapList` envelope, so payload is
+  // `{data: [...]}`, not `{products: [...]}`.
+  const result = await call<{ data: ProductRecord[] }>(baseUrl, 'GET', '/products');
+  for (const p of result.data) {
     if (wanted.has(p.name)) {
       await call(baseUrl, 'DELETE', `/products/${p.id}`);
     }

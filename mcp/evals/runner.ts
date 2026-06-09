@@ -53,28 +53,35 @@ function assertSample(
   toolCalls: { name: string; input: unknown }[],
   finalText: string,
 ): SampleAssertion {
-  // Tool calls: expected sequence must appear in order, in a prefix of the
-  // actual calls. Extra trailing calls are allowed (the agent might re-check
-  // something). Extra leading calls fail the assertion — the prefix matters.
-  for (let i = 0; i < caseSpec.expectedToolCalls.length; i++) {
-    const expected = caseSpec.expectedToolCalls[i]!;
-    const actual = toolCalls[i];
-    if (!actual) {
-      return {
-        passed: false,
-        reason: `expected ${caseSpec.expectedToolCalls.length} tool calls in order, agent made ${toolCalls.length}; missing #${i + 1}: ${expected.name}`,
-      };
+  // Tool calls: the expected sequence must appear AS A SUBSEQUENCE of the
+  // actual calls — order preserved, gaps allowed. Allowing gaps means the
+  // agent can insert exploratory calls (e.g. list_products mid-workflow to
+  // human-name a product) without failing the assertion. Order still matters,
+  // so an agent that revokes before discovering still fails.
+  let cursor = 0;
+  for (const expected of caseSpec.expectedToolCalls) {
+    // Advance through actual until we find a name match (and arg match if requested).
+    let matched = false;
+    while (cursor < toolCalls.length) {
+      const actual = toolCalls[cursor];
+      cursor++;
+      if (actual && actual.name === expected.name) {
+        if (expected.argsMatch && !expected.argsMatch(actual.input)) {
+          // Name matched but args didn't — keep looking. A later call with the
+          // same name might match the predicate. This handles the case where the
+          // agent makes a probe call before settling on the right args.
+          continue;
+        }
+        matched = true;
+        break;
+      }
     }
-    if (actual.name !== expected.name) {
+    if (!matched) {
+      const expectedNames = caseSpec.expectedToolCalls.map((c) => c.name).join(' → ');
+      const actualNames = toolCalls.map((c) => c.name).join(' → ') || '(none)';
       return {
         passed: false,
-        reason: `expected tool call #${i + 1} to be ${expected.name}, agent called ${actual.name}`,
-      };
-    }
-    if (expected.argsMatch && !expected.argsMatch(actual.input)) {
-      return {
-        passed: false,
-        reason: `tool call #${i + 1} (${actual.name}) failed argsMatch predicate`,
+        reason: `expected subsequence [${expectedNames}] not found in [${actualNames}]; first miss: ${expected.name}${expected.argsMatch ? ' (with matching args)' : ''}`,
       };
     }
   }
@@ -168,6 +175,12 @@ async function runCase(
           backendBaseUrl: backendUrl,
           prompt: promptText,
           costTracker,
+          // Production MCP clients (Claude Code, etc.) inject the current date
+          // into the system prompt so the model's expires_at math agrees with
+          // the backend's clock. Without this the agent's training-cutoff "now"
+          // diverges from the backend's real "now" and every relative-date
+          // prompt becomes expires_at_in_past.
+          systemPrompt: `Today's date is ${new Date().toISOString().slice(0, 10)}.`,
         });
         const assertion = assertSample(caseSpec, loop.toolCalls, loop.finalText);
         const passed = assertion.passed;
@@ -185,6 +198,17 @@ async function runCase(
           `    sample ${i + 1}/${samples} ... ${verdict}` +
             `  [cost $${loop.costUsd.toFixed(4)}, ${loop.inputTokens + loop.outputTokens} tokens, stop=${loop.stoppedReason}]`,
         );
+        // On failure, dump the agent's actual tool call sequence with args.
+        // This is the only signal that lets you tell "agent panicked and
+        // retried 7 times" apart from "agent did the right thing but my
+        // assertion was too strict".
+        if (!passed) {
+          for (const [j, tc] of loop.toolCalls.entries()) {
+            log(`      [${j + 1}] ${tc.name}(${JSON.stringify(tc.input)})`);
+          }
+          const tail = loop.finalText.length > 240 ? loop.finalText.slice(0, 240) + '…' : loop.finalText;
+          log(`      final: ${tail.replace(/\n/g, ' ')}`);
+        }
       } catch (err) {
         results.push({
           passed: false,
@@ -237,18 +261,22 @@ async function main(): Promise<void> {
   const backendUrl = process.env.LICENSE_SERVICE_BASE_URL ?? DEFAULT_BACKEND_URL;
   const capUsd = envNumber('COST_CAP_USD', DEFAULT_COST_CAP_USD);
   const samples = envNumber('SAMPLES_PER_CASE', DEFAULT_SAMPLES);
+  const caseFilter = process.env.CASE_FILTER?.toLowerCase();
+  const filteredCases = caseFilter
+    ? CASES.filter((c) => c.name.toLowerCase().includes(caseFilter))
+    : CASES;
 
   log(`backend:        ${backendUrl}`);
   log(`model:          ${MODEL}`);
   log(`samples/case:   ${samples}`);
   log(`cost cap:       $${capUsd.toFixed(2)}`);
-  log(`cases:          ${CASES.length}`);
+  log(`cases:          ${filteredCases.length}${caseFilter ? ` (filtered by "${caseFilter}", ${CASES.length - filteredCases.length} skipped)` : ''}`);
 
   const anthropic = new Anthropic({ apiKey });
   const costTracker = new CostTracker({ capUsd });
 
   const caseResults: CaseResult[] = [];
-  for (const c of CASES) {
+  for (const c of filteredCases) {
     const result = await runCase(c, anthropic, backendUrl, samples, costTracker);
     caseResults.push(result);
   }

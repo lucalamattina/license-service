@@ -1,14 +1,17 @@
 /**
  * Failure-mode case 5 from MCP_DESIGN.md section 10.
  *
- * Goal: the agent attempts `issue_license` with a past `expires_at`, the
- * backend rejects with `expires_at_in_past`, and the agent surfaces the
- * problem (either asks for clarification, or retries with a future date).
- * Either branch is acceptable — what's not acceptable is silent failure.
+ * Goal: the agent surfaces the past-date problem rather than failing silently.
+ * Two equally acceptable agent shapes:
+ *   (a) Call issue_license, get the 400, then ask or retry with a future date.
+ *   (b) Anticipate the problem (the prompt literally says "yesterday") and
+ *       ask for clarification before calling issue_license at all.
  *
- * We assert the initial 3-call prefix (discover user, list products, attempt
- * issue) and leave the prefix open-ended so a retry chain doesn't fail the
- * test.
+ * Sonnet 4.6 takes branch (b) reliably in this scenario — it sees "yesterday"
+ * and asks before burning a backend round-trip on a known-bad call. The
+ * eval's expected sequence therefore covers only the context-gathering calls
+ * (find_user_by_email + list_products) and leans on the finalMessage regex
+ * to confirm the date issue was actually surfaced.
  */
 
 import type { EvalCase } from '../types.js';
@@ -49,7 +52,6 @@ export const expiresAtInPast: EvalCase = {
         (args as { email?: string }).email === SEED_EMAIL,
     },
     { name: 'list_products' },
-    { name: 'issue_license' },
   ],
 
   // The agent's final message must reference the date problem somehow —
