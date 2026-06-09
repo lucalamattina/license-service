@@ -10,6 +10,7 @@ coverage
 *.log
 tests
 docs
+mcp
 PLAN.md
 CONTEXT.md
 README.md
