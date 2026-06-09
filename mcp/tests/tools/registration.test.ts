@@ -29,10 +29,7 @@ async function buildConnectedClient(): Promise<{ client: Client; cleanup: () => 
 }
 
 describe('tool registration via SDK listTools', () => {
-  it('exposes the discovery and read tools registered so far', async () => {
-    // This list grows phase-by-phase. Phase 2 added the two discovery tools;
-    // Phase 3 added the four read tools below. Phase 4 will add the two action
-    // tools (issue_license, revoke_license).
+  it('exposes all 8 tools (Phase 2 discovery + Phase 3 read + Phase 4 action)', async () => {
     const { client, cleanup } = await buildConnectedClient();
     try {
       const { tools } = await client.listTools();
@@ -40,9 +37,11 @@ describe('tool registration via SDK listTools', () => {
       expect(names).toEqual([
         'find_user_by_email',
         'get_license',
+        'issue_license',
         'list_products',
         'list_user_active_products',
         'list_user_licenses',
+        'revoke_license',
         'validate_license',
       ]);
     } finally {
