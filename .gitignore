@@ -10,4 +10,5 @@ coverage/
 .idea/
 PLAN.md
 CONTEXT.md
+mcp/PLAN.md
 .claude/settings.local.json
