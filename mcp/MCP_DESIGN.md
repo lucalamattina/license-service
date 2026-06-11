@@ -1,4 +1,4 @@
-# MCP layer — design
+# MCP layer design
 
 > Design doc for the Model Context Protocol layer that exposes the `license-service` backend to MCP clients such as Claude Code and Cursor.
 >
@@ -6,7 +6,7 @@
 
 ## 1. Summary
 
-The server runs as a local Node child process spawned by an MCP client, communicates with the client over the stdio transport, and translates the client's tool calls into HTTP requests against the deployed backend (Heroku by default, configurable for local dev or eval runs). The intended consumer is an agent acting as a fictional admin-assistant: a support engineer asking Claude to look up a user, audit a license history, or issue and revoke licenses in natural language rather than via direct API calls. The layer is deliberately thin — no state, no orchestration, no auth — so the design surface stays visible: the work lives in *which* operations are exposed (and which are deliberately not), how the backend's structured errors are rewritten so an agent can reason over them, and whether the resulting tool surface is verified by an eval suite rather than asserted. All three MCP primitives (tools, resources, prompts) are exposed; the rationale for each lives in its own section.
+The server runs as a local Node child process spawned by an MCP client, communicates with the client over the stdio transport, and translates the client's tool calls into HTTP requests against the deployed backend (Heroku by default, configurable for local dev or eval runs). The intended consumer is an agent acting as a fictional admin-assistant: a support engineer asking Claude to look up a user, audit a license history, or issue and revoke licenses in natural language rather than via direct API calls. The layer is deliberately thin (no state, no orchestration, no auth) so the design surface stays visible: the work lives in *which* operations are exposed (and which are deliberately not), how the backend's structured errors are rewritten so an agent can reason over them, and whether the resulting tool surface is verified by an eval suite rather than asserted. All three MCP primitives (tools, resources, prompts) are exposed; the rationale for each lives in its own section.
 
 ## 2. Goals and Non-Goals
 
@@ -73,7 +73,7 @@ Plain `fetch` against the backend's base URL, with:
 - **Base URL** read from an env var (`LICENSE_SERVICE_BASE_URL`), defaulting to the deployed Heroku instance.
 - **Per-request timeout** of 30 seconds (section 7).
 - **One retry on network errors**, none on backend 4xx/5xx (section 7).
-- **No auth headers** — the backend is identity-agnostic.
+- **No auth headers**: the backend is identity-agnostic.
 
 ### Repository layout
 
@@ -120,14 +120,14 @@ These resolve human-facing references (emails, product names) to the UUIDs the r
 
 ### Read tools
 
-These inspect existing state without mutating anything (with the deliberate exception of `validate_license` — see below).
+These inspect existing state without mutating anything (with the deliberate exception of `validate_license`, see below).
 
 #### `get_license`
 
 - **Why exposed:** The agent often holds a `license_id` from a previous tool call and needs the full record. Distinct from `validate_license` because read-without-mutation is a different intent and the agent should be able to choose.
 - **Args:** `license_id` (uuid string).
 - **Description (agent-facing):**
-  > Fetches a license by id without mutating its state. Returns the full license record `{ id, status, created_at, expires_at, user_id, product_id }`. Use this when you need to inspect a license's metadata (owner, product, dates, status) without checking its current validity. If you specifically want to know whether the license is currently valid, use `validate_license` instead — it auto-transitions expired-but-still-active licenses inside the same transaction.
+  > Fetches a license by id without mutating its state. Returns the full license record `{ id, status, created_at, expires_at, user_id, product_id }`. Use this when you need to inspect a license's metadata (owner, product, dates, status) without checking its current validity. If you specifically want to know whether the license is currently valid, use `validate_license` instead; it auto-transitions expired-but-still-active licenses inside the same transaction.
 - **Success:** the license object.
 - **Common errors:** `not_found` (no license with that id).
 
@@ -136,7 +136,7 @@ These inspect existing state without mutating anything (with the deliberate exce
 - **Why exposed:** "Show me everything for this user" is the canonical audit workflow. Anchors the `audit_user_licenses` prompt.
 - **Args:** `user_id` (uuid string).
 - **Description (agent-facing):**
-  > Returns every license a user has ever held for any product, in any status (active, expired, revoked). Returns `{ licenses: [...] }`. Use this for audit-style "show me everything" workflows. If you only care about products the user can currently use, call `list_user_active_products` instead — it's a "right now" view that excludes revoked and expired licenses.
+  > Returns every license a user has ever held for any product, in any status (active, expired, revoked). Returns `{ licenses: [...] }`. Use this for audit-style "show me everything" workflows. If you only care about products the user can currently use, call `list_user_active_products` instead; it's a "right now" view that excludes revoked and expired licenses.
 - **Success:** `{ licenses: [...] }` (possibly empty).
 - **Common errors:** `not_found` (the user doesn't exist; distinct from "the user exists but has no licenses," which returns an empty list).
 
@@ -151,7 +151,7 @@ These inspect existing state without mutating anything (with the deliberate exce
 
 #### `validate_license`
 
-- **Why exposed:** Currentness is the canonical runtime question for a license. The agent should distinguish "is this currently valid?" (this tool) from "what does this license look like?" (`get_license`). Note that this tool has a side effect — see the description.
+- **Why exposed:** Currentness is the canonical runtime question for a license. The agent should distinguish "is this currently valid?" (this tool) from "what does this license look like?" (`get_license`). Note that this tool has a side effect; see the description.
 - **Args:** `license_id` (uuid string).
 - **Description (agent-facing):**
   > Checks whether a license is currently valid. Returns `{ valid: boolean, license: {...} }`. If the license is `active` but past its `expires_at`, this call atomically transitions it to `expired` inside the same database transaction and returns `valid: false` with the updated record. Already-revoked or already-expired licenses are returned as-is with `valid: false`. Note that this tool has a side effect on active-but-expired licenses; use `get_license` if you want a pure read.
@@ -170,9 +170,9 @@ These mutate state. The trust model (section 8) governs how the MCP client gates
   > Issues a new Active license to a user for a specific product, expiring at the given timestamp. `expires_at` must be ISO 8601 and strictly in the future; if the human gives a relative time ("in 30 days"), compute the timestamp yourself. **Duplicate-license policy:** if the user already holds an Active license for this product, the new license replaces the old one **only if** `expires_at` is strictly later (the old becomes Revoked, the new is Active). If `expires_at` is earlier or equal, the request fails with `duplicate_active_license` and the existing license is untouched. Revoked or Expired existing licenses for the same product do **not** block issuance.
 - **Success:** the new license record `{ id, status: "active", created_at, expires_at, user_id, product_id }`.
 - **Common errors:**
-  - `duplicate_active_license` (409) — explain to the human that the user already has equal-or-later coverage; the existing license's `expires_at` is in the error message.
-  - `expires_at_in_past` (400) — compute a future timestamp and retry.
-  - `not_found` (404) — `user_id` or `product_id` doesn't exist; re-check via `find_user_by_email` or `list_products`.
+  - `duplicate_active_license` (409): explain to the human that the user already has equal-or-later coverage; the existing license's `expires_at` is in the error message.
+  - `expires_at_in_past` (400): compute a future timestamp and retry.
+  - `not_found` (404): `user_id` or `product_id` doesn't exist; re-check via `find_user_by_email` or `list_products`.
 
 #### `revoke_license`
 
@@ -182,7 +182,7 @@ These mutate state. The trust model (section 8) governs how the MCP client gates
   > Revokes an Active license, transitioning it to `status: revoked` and preserving the row in the database (no hard delete). Returns the updated record. Only Active licenses can be revoked: re-revoking a Revoked license, or revoking an Expired license, fails with `license_not_active`. Use this to "end" a license; if you want to extend or upgrade instead, call `issue_license` with a later `expires_at` (the duplicate-license policy will handle the swap).
 - **Success:** the updated license record `{ ..., status: "revoked", ... }`.
 - **Common errors:**
-  - `license_not_active` (409) — the license is already terminal; surface this clearly to the human rather than retrying.
+  - `license_not_active` (409): the license is already terminal; surface this clearly to the human rather than retrying.
   - `not_found` (404).
 
 ### Deliberately not exposed
@@ -194,7 +194,7 @@ Defending the cuts. Each item below is a backend capability the MCP layer choose
 - **`GET /users`** (list every user). Without authentication, this would dump every email in the system into the agent's context window for any conversation. The principled discovery path is `find_user_by_email` (the caller must already know an email).
 - **Cross-user listings** (`GET /products/:id/users`, `GET /products/:id/licenses`). These are dashboard-shaped: a human admin scanning a UI to see "everyone on Pro Plan." An agent works one user at a time; cross-user views invite the agent to reason over data it doesn't need.
 - **License hard-deletion** (`DELETE /licenses/:id`). The backend supports it. The agent-appropriate way to end a license is `revoke_license`, which preserves the audit trail. Exposing hard-delete would let the agent destroy history.
-- **`get_user` / `get_product` as tools.** A `user_id` or `product_id` the agent is holding can be fetched via the corresponding **resource** (`user://{user_id}`, `product://{product_id}`) — see section 5. Keeping these as resources rather than tools enforces the "tools are deliberate actions, resources are loadable context" split.
+- **`get_user` / `get_product` as tools.** A `user_id` or `product_id` the agent is holding can be fetched via the corresponding **resource** (`user://{user_id}`, `product://{product_id}`); see section 5. Keeping these as resources rather than tools enforces the "tools are deliberate actions, resources are loadable context" split.
 
 ## 5. Resource Design
 
@@ -233,8 +233,8 @@ user-message → tool calls → tool returns an id → agent fetches resource://
 Concrete example. The agent is asked *"summarise license `<UUID>`'s owner and product"*. The flow:
 
 1. Tool call: `get_license(license_id)` returns the license record (including `user_id` and `product_id`).
-2. Resource read: `user://{user_id}` — agent fetches the user's email.
-3. Resource read: `product://{product_id}` — agent fetches the product's name.
+2. Resource read: `user://{user_id}`. The agent fetches the user's email.
+3. Resource read: `product://{product_id}`. The agent fetches the product's name.
 4. Agent assembles the summary.
 
 The same flow could have been a tool chain alone (`get_license` → `get_user` → `get_product`), but `get_user` and `get_product` were deliberately *not* exposed as tools (section 4 cuts). Resources are the right primitive: the agent is *fetching context for things it already has handles to*, not deciding which action to take.
@@ -244,7 +244,7 @@ The same flow could have been a tool chain alone (`get_license` → `get_user` �
 A reviewer could reasonably ask: *if tools already cover discovery and action, and resources are only used for opportunistic re-fetch, why bother implementing the resource primitive at all?* Two answers:
 
 1. **Tool budget.** Tools take up slots in the agent's tool list and add to the system prompt every turn. `get_user` / `get_product` as tools would inflate the tool count without adding capability the resource path doesn't already cover. Resources are loaded only when the agent needs them; they don't cost system-prompt real estate.
-2. **The portfolio framing.** This doc commits to using all three MCP primitives deliberately (section 2 goals). Resources earn their place by being the right primitive for "fetch full state from an id" rather than by ticking a protocol-completeness box. The clean division — tools find and act, resources fetch context — is the design move worth defending.
+2. **The portfolio framing.** This doc commits to using all three MCP primitives deliberately (section 2 goals). Resources earn their place by being the right primitive for "fetch full state from an id" rather than by ticking a protocol-completeness box. The clean division (tools find and act, resources fetch context) is the design move worth defending.
 
 ## 6. Prompt Design
 
@@ -258,7 +258,7 @@ The MCP server exposes **one** prompt: `audit_user_licenses`. The decision to in
 | **Arguments** | `user_id` (uuid string)                                                                          |
 | **Purpose**   | Standardise the shape of a license audit so reports generated from different conversations look consistent. |
 
-The expanded prompt body the server returns (the canonical text lives in [`mcp/src/prompts.ts`](src/prompts.ts) — the version below is for reference and may drift slightly during development; the test suite pins the runtime body to the code):
+The expanded prompt body the server returns (the canonical text lives in [`mcp/src/prompts.ts`](src/prompts.ts); the version below is for reference and may drift slightly during development; the test suite pins the runtime body to the code):
 
 > Produce a license audit for user `{user_id}`. Format the response as:
 >
@@ -281,8 +281,8 @@ The output-contract level (sections, formatting, what to fabricate, what to do o
 
 Two candidate additional prompts were considered and rejected:
 
-- `prepare_revocation_summary(license_id)` — a pre-revocation read that gathers context before the destructive action. Rejected because it's a single-tool wrapper around `get_license` plus the linked resources; not enough shape to justify a separate prompt. The agent can do this from the tool list.
-- `find_orphaned_licenses()` — find licenses whose user or product was deleted. Rejected because cascade deletes mean orphans cannot exist by construction; the prompt would always return an empty result and add zero value.
+- `prepare_revocation_summary(license_id)`: a pre-revocation read that gathers context before the destructive action. Rejected because it's a single-tool wrapper around `get_license` plus the linked resources; not enough shape to justify a separate prompt. The agent can do this from the tool list.
+- `find_orphaned_licenses()`: find licenses whose user or product was deleted. Rejected because cascade deletes mean orphans cannot exist by construction; the prompt would always return an empty result and add zero value.
 
 The line between "should be a prompt" and "the agent figures it out" is whether the workflow has a *recurring output contract* that benefits from being canonicalised. `audit_user_licenses` clears that bar; the candidates above don't.
 
@@ -305,7 +305,7 @@ Every backend non-2xx response becomes an MCP tool result with `isError: true` a
 The agent reads the NL paragraph; the JSON line preserves the structured payload so:
 
 - Eval cases can assert on `error` codes without parsing prose.
-- Agent logic that wants to branch deterministically (rare but possible — e.g. the `audit_user_licenses` prompt deciding whether to skip a particular call) can do so.
+- Agent logic that wants to branch deterministically (rare but possible, e.g. the `audit_user_licenses` prompt deciding whether to skip a particular call) can do so.
 
 Success responses are returned as normal MCP tool results with `isError: false` and a JSON-stringified content block.
 
@@ -316,10 +316,10 @@ Success responses are returned as normal MCP tool results with `isError: false` 
 | `validation_error`           | 400  | Any tool with invalid arg shape          | "The tool arguments didn't pass the backend's validation. The fields that failed are listed in `details`. Correct them and retry. Common causes: a UUID argument was not a valid UUID string, or an `expires_at` was not a valid ISO 8601 datetime."             |
 | `expires_at_in_past`         | 400  | `issue_license`                          | "The `expires_at` you provided is in the past. Re-read the human's request: if they said something relative like 'in 30 days', compute now + 30 days and retry; if they explicitly named a past date, ask them to clarify what they intended before issuing." |
 | `not_found` (license)        | 404  | `get_license`, `validate_license`, `revoke_license` | "No license exists with that id. Either the id is wrong, or the license was cascade-deleted via its user or product. If you have a `user_id`, re-discover via `list_user_licenses`."                                                                              |
-| `not_found` (user)           | 404  | `list_user_licenses`, `list_user_active_products` | "No user exists with that id. If the human gave you an email, call `find_user_by_email` to resolve it. If you got the id from a previous tool call, the user may have been deleted in the meantime — re-check."                                                  |
+| `not_found` (user)           | 404  | `list_user_licenses`, `list_user_active_products` | "No user exists with that id. If the human gave you an email, call `find_user_by_email` to resolve it. If you got the id from a previous tool call, the user may have been deleted in the meantime. Re-check."                                                  |
 | `not_found` (user or product)| 404  | `issue_license` (FK violation)           | "Either the `user_id` or `product_id` you provided doesn't exist. Re-check via `find_user_by_email` or `list_products` and retry."                                                                                                                                |
-| `duplicate_active_license`   | 409  | `issue_license`                          | "This user already has an Active license for this product expiring at `{existing_expires_at}` (read from `details`). The new expiration is earlier or equal, so no replacement happened and the existing license is untouched. If the human wants to extend, compute a later `expires_at` and retry. If they want to *shorten* coverage, that's unusual — confirm with them before doing anything." |
-| `license_not_active`         | 409  | `revoke_license`                         | "This license is already Revoked or Expired and cannot be revoked again. If the human's intent was to confirm the license is no longer active, tell them so — the goal state is already reached. Do not retry."                                                  |
+| `duplicate_active_license`   | 409  | `issue_license`                          | "This user already has an Active license for this product expiring at `{existing_expires_at}` (read from `details`). The new expiration is earlier or equal, so no replacement happened and the existing license is untouched. If the human wants to extend, compute a later `expires_at` and retry. If they want to *shorten* coverage, that's unusual; confirm with them before doing anything." |
+| `license_not_active`         | 409  | `revoke_license`                         | "This license is already Revoked or Expired and cannot be revoked again. If the human's intent was to confirm the license is no longer active, tell them so; the goal state is already reached. Do not retry."                                                  |
 | `internal_error`             | 500  | Any tool                                 | "The backend returned an unexpected internal error. No retry happened. Surface this to the human, include any reference id from the `details` field if present, and suggest they retry shortly or escalate to whoever operates the backend." |
 
 `duplicate_email` (409) exists in the backend's error vocabulary but cannot reach the MCP layer because user creation is not exposed; it's omitted from the table.
@@ -334,7 +334,7 @@ When the MCP server fails to get an HTTP response from the backend at all (DNS e
 The HTTP client uses:
 
 - **30-second timeout** per request. The Heroku Eco dyno can take up to ~15s to wake from idle sleep, so a tight timeout would manufacture spurious failures. 30s is loose enough to ride out a cold start and tight enough that the agent doesn't hang indefinitely if the backend is wedged.
-- **Exactly one retry on network errors only.** A second attempt after a 500ms delay covers transient DNS / TCP failures and the tail end of a cold-start. The MCP server does **not** retry on 4xx or 5xx responses from the backend; those are surfaced to the agent on the first attempt. The reasoning: 4xx is a client problem the agent must fix, and 5xx with a response body means the backend handled the request and chose to fail — retrying it could double-write.
+- **Exactly one retry on network errors only.** A second attempt after a 500ms delay covers transient DNS / TCP failures and the tail end of a cold-start. The MCP server does **not** retry on 4xx or 5xx responses from the backend; those are surfaced to the agent on the first attempt. The reasoning: 4xx is a client problem the agent must fix, and 5xx with a response body means the backend handled the request and chose to fail; retrying it could double-write.
 
 ### Why this design
 
@@ -342,13 +342,13 @@ The reviewer-facing argument is on three legs:
 
 1. **Two layers is honest.** Pure passthrough hides the design surface ("you just relayed JSON"); pure natural-language strips information the eval suite needs. The two-layer payload makes the eval suite tractable without making the agent parse enums.
 2. **The agent-facing sentence is written for the agent, not for the human admin.** It tells the model what *action* to consider next. That's the difference between an error message and a recovery hint.
-3. **No silent retries on backend errors.** Retrying a 409 or 500 with a response body would either double-write or hide the real failure; the agent should see what the backend said and decide. Network errors are different — they're transient by nature, and one retry is the right amount.
+3. **No silent retries on backend errors.** Retrying a 409 or 500 with a response body would either double-write or hide the real failure; the agent should see what the backend said and decide. Network errors are different; they're transient by nature, and one retry is the right amount.
 
 ## 8. Trust Model
 
 ### v1: pure delegation to the MCP client
 
-Every tool — including the two destructive ones (`revoke_license`, and `issue_license` when it triggers a replacement under the duplicate-license policy) — executes as soon as the MCP client allows the call. The MCP server has no notion of a "current user" and no authority to confirm anything beyond what the client already confirmed.
+Every tool, including the two destructive ones (`revoke_license`, and `issue_license` when it triggers a replacement under the duplicate-license policy), executes as soon as the MCP client allows the call. The MCP server has no notion of a "current user" and no authority to confirm anything beyond what the client already confirmed.
 
 In Claude Code's case, the client's per-tool "allow / always allow / deny" prompt is the human confirmation gate. The server trusts that gate.
 
@@ -383,7 +383,7 @@ This is acknowledged rather than fixed because evals run against an **isolated e
 
 ### Production gap (full list in section 11)
 
-The fact that v1 delegates everything is not an oversight; it's an explicit choice that matches the backend's design. Production would change every row in the table above — see section 11 for the full list. The most consequential change would be replacing pure delegation with MCP **elicitation requests** (the protocol's first-class human-in-the-loop primitive) for destructive operations, so the confirmation happens at the protocol layer rather than relying on each client to implement its own gate.
+The fact that v1 delegates everything is not an oversight; it's an explicit choice that matches the backend's design. Production would change every row in the table above. See section 11 for the full list. The most consequential change would be replacing pure delegation with MCP **elicitation requests** (the protocol's first-class human-in-the-loop primitive) for destructive operations, so the confirmation happens at the protocol layer rather than relying on each client to implement its own gate.
 
 ## 9. Identity Model
 
@@ -398,7 +398,7 @@ The trade-off is honest:
 - **Cost**: every conversation that involves the same user repeatedly re-resolves the email → `user_id` lookup, and the agent has to thread the id explicitly across turns.
 - **Benefit**: the server has no implicit context to leak or confuse. There is no "I forgot to switch user" failure mode; every tool call carries its full identity input. For a learning-project artifact whose security model is "delegate everything to the client," this is the right shape.
 
-Production would replace this with an agent-identity layer — OAuth bound at MCP server startup, per-call identity headers to the backend, server-side authorisation policies — see section 11.
+Production would replace this with an agent-identity layer: OAuth bound at MCP server startup, per-call identity headers to the backend, server-side authorisation policies. See section 11.
 
 ## 10. Evaluation Approach
 
@@ -466,11 +466,11 @@ Assertions are layered:
 
 Agents are sampling processes; even at temperature 0 there is a small but non-zero run-to-run variation depending on model version and load. The naive "retry on failure up to N times" pattern hides regressions: a case passing 60% of the time gives ~94% success in 3 attempts and looks fine, but it's the kind of degradation an eval suite should *catch*, not mask.
 
-Instead, each case is run **N=5 times per invocation** (configurable), and the runner reports a **pass rate** rather than a single pass/fail verdict. A single sample passes when all of the case's tool-call assertions and the final-message regex (if any) succeed; the pass rate is the fraction of samples that passed. A case is considered **regressed** if its pass rate drops below a threshold the case itself declares (default 80%). This makes the difference between "always passes" (5/5), "small regression" (3/5 — investigate), and "broken" (0/5) explicit instead of collapsed into one bit.
+Instead, each case is run **N=5 times per invocation** (configurable), and the runner reports a **pass rate** rather than a single pass/fail verdict. A single sample passes when all of the case's tool-call assertions and the final-message regex (if any) succeed; the pass rate is the fraction of samples that passed. A case is considered **regressed** if its pass rate drops below a threshold the case itself declares (default 80%). This makes the difference between "always passes" (5/5), "small regression" (3/5, investigate), and "broken" (0/5) explicit instead of collapsed into one bit.
 
 Temperature is pinned to 0. The 5-sample-per-case design isn't trying to compensate for sampling variability inside one case (temperature 0 mostly does that); it's there so the *reported number* is a sample-rate, not a single coin flip. Reporting 5/5 is a stronger statement than reporting 1/1.
 
-Cost note: 12 cases × 5 samples = 60 agent runs per eval invocation. Each run is a multi-turn agent loop with tool calls, so token-per-run matters: input grows on every tool result because the full conversation context is resent, so a 5-turn case can land around 5–15k total tokens. Budget a few dollars per full eval invocation at current Sonnet pricing — order of magnitude, not pocket change. The harness records cost per run and aborts if a configured cap is exceeded (default: $5 per invocation, configurable), useful when iterating on the suite locally so a typo doesn't accidentally run hundreds of cases.
+Cost note: 12 cases × 5 samples = 60 agent runs per eval invocation. Each run is a multi-turn agent loop with tool calls, so token-per-run matters: input grows on every tool result because the full conversation context is resent, so a 5-turn case can land around 5–15k total tokens. Budget a few dollars per full eval invocation at current Sonnet pricing. Order of magnitude, not pocket change. The harness records cost per run and aborts if a configured cap is exceeded (default: $5 per invocation, configurable), useful when iterating on the suite locally so a typo doesn't accidentally run hundreds of cases.
 
 ### The case list (representative, ~12 cases)
 
@@ -478,19 +478,19 @@ Grouped by what each case is testing.
 
 **Tool-selection smoke (4 cases)**
 
-1. `find_user_by_email — happy path`. Prompt: *"Look up the user whose email is alice@example.com."* Expects: `find_user_by_email({email: "alice@example.com"})`. Final message references the user's id.
-2. `list_products — happy path`. Prompt: *"What products do we offer?"* Expects: `list_products()`. Final message lists at least the seeded product names.
-3. `list_user_licenses — happy path with email lookup`. Prompt: *"Show me everything alice@example.com has ever held."* Expects: `find_user_by_email` then `list_user_licenses`. Final message includes "active" / "revoked" / "expired" as relevant.
-4. `validate_license — happy path`. Prompt: *"Is license <UUID> currently valid?"* Expects: `validate_license({license_id: ...})`. Final message says "yes" / "valid" / "active" or "no" / "invalid" depending on seeded state.
+1. `find_user_by_email`: happy path. Prompt: *"Look up the user whose email is alice@example.com."* Expects: `find_user_by_email({email: "alice@example.com"})`. Final message references the user's id.
+2. `list_products`: happy path. Prompt: *"What products do we offer?"* Expects: `list_products()`. Final message lists at least the seeded product names.
+3. `list_user_licenses`: happy path with email lookup. Prompt: *"Show me everything alice@example.com has ever held."* Expects: `find_user_by_email` then `list_user_licenses`. Final message includes "active" / "revoked" / "expired" as relevant.
+4. `validate_license`: happy path. Prompt: *"Is license <UUID> currently valid?"* Expects: `validate_license({license_id: ...})`. Final message says "yes" / "valid" / "active" or "no" / "invalid" depending on seeded state.
 
 **Failure-mode recovery (6 cases)**
 
 5. `expires_at_in_past surfaces correctly`. Prompt: *"Issue Alice a Pro Plan license expiring yesterday."* Expects: `find_user_by_email`, `list_products`, `issue_license` (with a past `expires_at`), then **either** asks the human to clarify the date **or** retries with a future date. Asserts the agent does *not* fail silently. Final message references the past-date issue.
-6. `duplicate_active_license — rejection surfaced, not retried`. Pre-state: Alice has an Active Pro Plan license expiring 2027-12-31. Prompt: *"Issue Alice a Pro Plan license expiring in 30 days."* Expects: `issue_license` with new earlier expiration; the error returns; the agent **does not** call `issue_license` again. Final message explains the user already has later coverage.
-7. `duplicate_active_license — replacement happy path`. Pre-state: Alice has an Active Pro Plan license expiring in 5 days. Prompt: *"Extend Alice's Pro Plan license to expire in 90 days."* Expects: `issue_license` succeeds (replacement). Final message confirms the new expiration and notes the old license was superseded.
-8. `license_not_active — already terminal`. Pre-state: a Revoked license. Prompt: *"Revoke license <UUID>."* Expects: `revoke_license` returns `license_not_active`; the agent **does not** retry, and the final message tells the human the license is already terminal.
-9. `not_found — bogus license id`. Prompt: *"Validate license 00000000-0000-0000-0000-000000000000."* Expects: `validate_license` returns `not_found`; final message says the license doesn't exist.
-10. `find_user_by_email — null match`. Prompt: *"Look up user nonexistent@example.com."* Expects: `find_user_by_email` returns `{user: null}`; the agent does **not** invent a user_id or call further tools; final message tells the human no user was found.
+6. `duplicate_active_license`: rejection surfaced, not retried. Pre-state: Alice has an Active Pro Plan license expiring 2027-12-31. Prompt: *"Issue Alice a Pro Plan license expiring in 30 days."* Expects: `issue_license` with new earlier expiration; the error returns; the agent **does not** call `issue_license` again. Final message explains the user already has later coverage.
+7. `duplicate_active_license`: replacement happy path. Pre-state: Alice has an Active Pro Plan license expiring in 5 days. Prompt: *"Extend Alice's Pro Plan license to expire in 90 days."* Expects: `issue_license` succeeds (replacement). Final message confirms the new expiration and notes the old license was superseded.
+8. `license_not_active`: already terminal. Pre-state: a Revoked license. Prompt: *"Revoke license <UUID>."* Expects: `revoke_license` returns `license_not_active`; the agent **does not** retry, and the final message tells the human the license is already terminal.
+9. `not_found`: bogus license id. Prompt: *"Validate license 00000000-0000-0000-0000-000000000000."* Expects: `validate_license` returns `not_found`; final message says the license doesn't exist.
+10. `find_user_by_email`: null match. Prompt: *"Look up user nonexistent@example.com."* Expects: `find_user_by_email` returns `{user: null}`; the agent does **not** invent a user_id or call further tools; final message tells the human no user was found.
 
 **Multi-step workflows (2 cases)**
 

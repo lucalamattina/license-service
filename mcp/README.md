@@ -2,7 +2,7 @@
 
 A [Model Context Protocol](https://modelcontextprotocol.io) server that exposes the [license-service backend](../) to MCP-compatible AI clients (Claude Code, Claude Desktop, Cursor, etc.) so an agent can resolve users by email, audit licence history, validate, issue, and revoke licences without writing any HTTP code.
 
-The full design rationale — tool surface, error translation, security stance, what was deliberately *not* exposed — lives in [MCP_DESIGN.md](MCP_DESIGN.md). This README is the operational quick-start.
+The full design rationale (tool surface, error translation, security stance, what was deliberately *not* exposed) lives in [MCP_DESIGN.md](MCP_DESIGN.md). This README is the operational quick-start.
 
 ## What the agent can do
 
@@ -96,7 +96,7 @@ For local development the `dev` script avoids the build step. Point the client's
 | Env var                     | Default                                                                  | What it does                                                                                                                       |
 | --------------------------- | ------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
 | `LICENSE_SERVICE_BASE_URL`  | `https://llamattina-license-service-5c6fae72379f.herokuapp.com`          | Backend HTTP base url. Override to point at a local stack.                                                                         |
-| `ANTHROPIC_API_KEY`         | _required for `npm run eval` only_                                       | Used by the eval harness to drive `claude-sonnet-4-6`. Not used by the server itself — the agent's API key lives in the MCP client. |
+| `ANTHROPIC_API_KEY`         | _required for `npm run eval` only_                                       | Used by the eval harness to drive `claude-sonnet-4-6`. Not used by the server itself; the agent's API key lives in the MCP client. |
 | `COST_CAP_USD`              | `5.00`                                                                   | Eval-only. Aborts the run if the cumulative Anthropic spend crosses this.                                                          |
 | `SAMPLES_PER_CASE`          | `5`                                                                      | Eval-only. Number of samples per case for the pass-rate calculation.                                                               |
 | `CASE_FILTER`               | unset                                                                    | Eval-only. Substring-matches against case names; useful when iterating on one or two cases. Example: `CASE_FILTER=duplicate`.      |
@@ -113,7 +113,7 @@ After changing the config, restart the MCP client so it re-spawns the server wit
 
 ## Running the eval suite
 
-The eval harness (`mcp/evals/`) runs a 12-case suite against the live backend with `claude-sonnet-4-6`, sampling each case 5 times and reporting a per-case pass rate. The rationale — pass rate over pass/fail, why some cases assert "did NOT call this tool", why the matcher is a subsequence rather than a strict prefix — is in [MCP_DESIGN.md](MCP_DESIGN.md#10-evaluation).
+The eval harness (`mcp/evals/`) runs a 12-case suite against the live backend with `claude-sonnet-4-6`, sampling each case 5 times and reporting a per-case pass rate. The rationale (pass rate over pass/fail, why some cases assert "did NOT call this tool", why the matcher is a subsequence rather than a strict prefix) is in [MCP_DESIGN.md](MCP_DESIGN.md#10-evaluation).
 
 ```bash
 echo "ANTHROPIC_API_KEY=sk-ant-..." > mcp/.env   # gitignored
@@ -132,7 +132,7 @@ CASE_FILTER=audit npm run eval                    # ~$0.25
 CASE_FILTER=duplicate SAMPLES_PER_CASE=2 npm run eval   # ~$0.10
 ```
 
-The runner dumps the actual tool-call sequence (with args) and the final-message tail for every **failed** sample — this is the signal that lets you tell "the agent panicked and retried" apart from "my assertion was too strict".
+The runner dumps the actual tool-call sequence (with args) and the final-message tail for every **failed** sample. This is the signal that lets you tell "the agent panicked and retried" apart from "my assertion was too strict".
 
 > The 12 case definitions live in [evals/cases/](evals/cases). Each file is small and self-contained; the order of cases and the threshold per case are in [evals/cases/index.ts](evals/cases/index.ts) and [evals/types.ts](evals/types.ts).
 
@@ -149,7 +149,7 @@ The runner dumps the actual tool-call sequence (with args) and the final-message
 | `npm run test:watch` | Vitest in watch mode.                                                     |
 | `npm run eval`     | Run the eval suite against the live backend. Needs `ANTHROPIC_API_KEY`.     |
 
-The unit tests do **not** hit the backend or the Anthropic API — they use a stubbed `fetch` and the SDK's `InMemoryTransport`. They verify the MCP-layer code (routing, Zod validation, error translation, result shape) deterministically. The eval suite is what exercises the agent + tools + real backend together.
+The unit tests do **not** hit the backend or the Anthropic API; they use a stubbed `fetch` and the SDK's `InMemoryTransport`. They verify the MCP-layer code (routing, Zod validation, error translation, result shape) deterministically. The eval suite is what exercises the agent + tools + real backend together.
 
 ## Layout
 
@@ -189,10 +189,10 @@ The `mcp/` directory has its own `package.json`, lockfile, and `node_modules`. T
 1. **The backend's Docker image must not bundle the MCP code.** `.dockerignore` excludes `mcp/`. A separate package keeps the dependency graphs disjoint so a stray `import` from the backend into the MCP layer would surface immediately.
 2. **The MCP layer has client-only deps** (`@modelcontextprotocol/sdk`, `@anthropic-ai/sdk`) that have no business in a production HTTP server image.
 
-The MCP server only talks to the backend over HTTP. There is **no shared code or shared TypeScript project boundary** between the two packages — they communicate exactly the way Claude Code and the deployed backend communicate in production.
+The MCP server only talks to the backend over HTTP. There is **no shared code or shared TypeScript project boundary** between the two packages; they communicate exactly the way Claude Code and the deployed backend communicate in production.
 
 ## See also
 
-- [MCP_DESIGN.md](MCP_DESIGN.md) — the canonical design doc (tool surface, error translation, resources, prompts, security, eval strategy)
-- [Backend DESIGN.md](../DESIGN.md) — the HTTP service the MCP layer wraps
-- [Backend README](../README.md) — the deployed live URL, the seeded data, the dashboard
+- [MCP_DESIGN.md](MCP_DESIGN.md): the canonical design doc (tool surface, error translation, resources, prompts, security, eval strategy)
+- [Backend DESIGN.md](../DESIGN.md): the HTTP service the MCP layer wraps
+- [Backend README](../README.md): the deployed live URL, the seeded data, the dashboard
