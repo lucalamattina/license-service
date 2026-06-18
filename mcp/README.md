@@ -116,8 +116,8 @@ After changing the config, restart the MCP client so it re-spawns the server wit
 The eval harness (`mcp/evals/`) runs a 12-case suite against the live backend with `claude-sonnet-4-6`, sampling each case 5 times and reporting a per-case pass rate. The rationale (pass rate over pass/fail, why some cases assert "did NOT call this tool", why the matcher is a subsequence rather than a strict prefix) is in [MCP_DESIGN.md](MCP_DESIGN.md#10-evaluation).
 
 ```bash
-echo "ANTHROPIC_API_KEY=sk-ant-..." > mcp/.env   # gitignored
 cd mcp
+cp .env.example .env    # then edit .env and paste your ANTHROPIC_API_KEY
 npm run eval
 ```
 
