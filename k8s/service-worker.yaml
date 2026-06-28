@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: license-service-worker
+  labels: { app: license-service, role: worker }   # selected by the worker ServiceMonitor
+spec:
+  type: ClusterIP
+  clusterIP: None   # headless: this Service exists only to give Prometheus scrape targets,
+                    # not to load-balance traffic (the worker is not HTTP-facing)
+  selector: { app: license-service, role: worker }
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000

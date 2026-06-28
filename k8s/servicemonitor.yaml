@@ -1,0 +1,33 @@
+# Prometheus (kube-prometheus-stack) discovers ServiceMonitors labeled
+# release=monitoring across all namespaces. Each one points Prometheus at the
+# named "http" port of a matching Service and scrapes /metrics.
+#
+# Two are needed because the web and worker run as separate processes with
+# separate prom-client registries: the web owns issued/revoked/validate counters,
+# the worker owns licenses_expired_total{path="scan"}. Scraping only the web
+# Service would silently miss the worker's scan metrics.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: license-service-web
+  labels: { release: monitoring }
+spec:
+  selector:
+    matchLabels: { app: license-service, role: web }
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: license-service-worker
+  labels: { release: monitoring }
+spec:
+  selector:
+    matchLabels: { app: license-service, role: worker }
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s

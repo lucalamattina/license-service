@@ -1,0 +1,85 @@
+# Dashboard-as-code: the kube-prometheus-stack Grafana sidecar watches all
+# namespaces for ConfigMaps labelled grafana_dashboard="1" and auto-imports the
+# JSON. Shipping it here means the dashboard is reproducible from git, not a
+# click-built artifact that lives only in one Grafana instance.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: license-service-dashboard
+  labels:
+    grafana_dashboard: "1"
+data:
+  license-service.json: |
+    {
+      "annotations": { "list": [] },
+      "editable": true,
+      "graphTooltip": 0,
+      "time": { "from": "now-1h", "to": "now" },
+      "title": "License Service",
+      "uid": "license-service",
+      "schemaVersion": 39,
+      "version": 1,
+      "refresh": "30s",
+      "templating": {
+        "list": [
+          {
+            "current": {},
+            "hide": 0,
+            "name": "datasource",
+            "query": "prometheus",
+            "refresh": 1,
+            "regex": "",
+            "type": "datasource"
+          }
+        ]
+      },
+      "panels": [
+        {
+          "id": 1,
+          "title": "Issuance / revocation rate (per s)",
+          "type": "timeseries",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+          "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+          "targets": [
+            { "expr": "sum(rate(licenses_issued_total[5m]))", "legendFormat": "issued", "refId": "A", "datasource": { "type": "prometheus", "uid": "${datasource}" } },
+            { "expr": "sum(rate(licenses_revoked_total[5m]))", "legendFormat": "revoked", "refId": "B", "datasource": { "type": "prometheus", "uid": "${datasource}" } }
+          ]
+        },
+        {
+          "id": 2,
+          "title": "Expirations by path (per s)  —  scan = worker, validate = web",
+          "type": "timeseries",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+          "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+          "targets": [
+            { "expr": "sum by (path) (rate(licenses_expired_total[5m]))", "legendFormat": "{{path}}", "refId": "A", "datasource": { "type": "prometheus", "uid": "${datasource}" } }
+          ]
+        },
+        {
+          "id": 3,
+          "title": "Validation results (per s)",
+          "type": "timeseries",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+          "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+          "targets": [
+            { "expr": "sum by (result) (rate(license_validations_total[5m]))", "legendFormat": "{{result}}", "refId": "A", "datasource": { "type": "prometheus", "uid": "${datasource}" } }
+          ]
+        },
+        {
+          "id": 4,
+          "title": "Cumulative totals",
+          "type": "stat",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+          "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+          "targets": [
+            { "expr": "sum(licenses_issued_total)", "legendFormat": "issued", "refId": "A", "datasource": { "type": "prometheus", "uid": "${datasource}" } },
+            { "expr": "sum(licenses_revoked_total)", "legendFormat": "revoked", "refId": "B", "datasource": { "type": "prometheus", "uid": "${datasource}" } },
+            { "expr": "sum(licenses_expired_total)", "legendFormat": "expired", "refId": "C", "datasource": { "type": "prometheus", "uid": "${datasource}" } }
+          ]
+        }
+      ]
+    }

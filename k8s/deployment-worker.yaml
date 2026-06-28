@@ -20,6 +20,17 @@ spec:
           envFrom:
             - configMapRef: { name: license-service-config }
             - secretRef: { name: license-service-secrets }
+          ports:
+            - name: http   # the worker's metrics server (also the liveness target)
+              containerPort: 3000
+          livenessProbe:
+            httpGet: { path: /health, port: 3000 }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet: { path: /health, port: 3000 }   # worker has no /ready; /health gates scrape readiness
+            initialDelaySeconds: 5
+            periodSeconds: 10
           resources:
             requests: { cpu: "50m", memory: "128Mi" }
             limits:   { cpu: "250m", memory: "256Mi" }
