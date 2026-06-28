@@ -17,7 +17,7 @@ spec:
       restartPolicy: Never
       containers:
         - name: migrate
-          image: ghcr.io/lucalamattina/license-service:sha-627a323
+          image: ghcr.io/lucalamattina/license-service:sha-50d2979
           imagePullPolicy: IfNotPresent
           command: ["node", "dist/db/migrate-cli.js"]
           envFrom:
