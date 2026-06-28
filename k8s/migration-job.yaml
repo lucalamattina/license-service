@@ -2,6 +2,14 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: license-service-migrate
+  annotations:
+    # Run as an ArgoCD PreSync hook: migrations apply once, before the web/worker
+    # Deployments are synced, on every rollout. Because ArgoCD deletes + recreates
+    # the hook each sync, the "Job spec is immutable" conflict never arises.
+    argocd.argoproj.io/hook: PreSync
+    # Delete the previous hook Job just before creating the next one — leaves the
+    # last run around between syncs so its logs are inspectable.
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
 spec:
   backoffLimit: 3
   template:
@@ -9,7 +17,7 @@ spec:
       restartPolicy: Never
       containers:
         - name: migrate
-          image: license-service:dev
+          image: ghcr.io/lucalamattina/license-service:sha-11415d8   # pinned by CI write-back, in lockstep with the Deployments
           imagePullPolicy: IfNotPresent
           command: ["node", "dist/db/migrate-cli.js"]
           envFrom:
