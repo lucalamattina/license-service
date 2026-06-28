@@ -13,7 +13,7 @@ spec:
     spec:
       containers:
         - name: worker
-          image: ghcr.io/lucalamattina/license-service:sha-11415d8
+          image: ghcr.io/lucalamattina/license-service:sha-627a323
           imagePullPolicy: IfNotPresent
           env:
             - { name: PROCESS_ROLE, value: "worker" }

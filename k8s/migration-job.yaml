@@ -17,7 +17,7 @@ spec:
       restartPolicy: Never
       containers:
         - name: migrate
-          image: ghcr.io/lucalamattina/license-service:sha-11415d8   # pinned by CI write-back, in lockstep with the Deployments
+          image: ghcr.io/lucalamattina/license-service:sha-627a323
           imagePullPolicy: IfNotPresent
           command: ["node", "dist/db/migrate-cli.js"]
           envFrom:
