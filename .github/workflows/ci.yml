@@ -143,7 +143,7 @@ jobs:
     needs: [lint, typecheck, unit-tests, integration-tests, build, docker-build]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
-      contents: read
+      contents: write # write: also commit the pinned image tag back to k8s/
       packages: write # required to push to ghcr.io
     steps:
       - uses: actions/checkout@v4
@@ -154,20 +154,38 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: image tags + labels
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/${{ github.repository }}
-          tags: |
-            type=sha
-            type=raw,value=latest
+      # Compute the short-sha tag once and reuse it for both the push and the
+      # manifest write-back, so the published tag and the pinned tag can't drift.
+      - name: compute image ref
+        id: img
+        run: |
+          SHORT=$(git rev-parse --short=7 HEAD)
+          echo "tag=sha-$SHORT" >> "$GITHUB_OUTPUT"
+          echo "ref=ghcr.io/${{ github.repository }}:sha-$SHORT" >> "$GITHUB_OUTPUT"
       - name: build and push
         uses: docker/build-push-action@v6
         with:
           context: .
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: |
+            ${{ steps.img.outputs.ref }}
+            ghcr.io/${{ github.repository }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      # GitOps write-back: pin the freshly-built immutable SHA tag into the
+      # Deployments and commit it. [skip ci] stops this commit from re-triggering
+      # the workflow. ArgoCD then syncs the change and rolls the pods.
+      - name: pin image tag in manifests
+        run: |
+          REF="${{ steps.img.outputs.ref }}"
+          sed -i -E "s|image: ghcr.io/${{ github.repository }}:.*|image: $REF|" \
+            k8s/deployment-web.yaml k8s/deployment-worker.yaml
+          if git diff --quiet -- k8s/; then
+            echo "manifests already pinned to $REF — nothing to commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add k8s/deployment-web.yaml k8s/deployment-worker.yaml
+          git commit -m "deploy ${{ steps.img.outputs.tag }} [skip ci]"
+          git push origin HEAD:main

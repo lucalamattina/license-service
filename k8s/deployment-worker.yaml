@@ -13,7 +13,7 @@ spec:
     spec:
       containers:
         - name: worker
-          image: license-service:dev
+          image: ghcr.io/lucalamattina/license-service:sha-4e239e1   # pinned by CI write-back on each green main
           imagePullPolicy: IfNotPresent
           env:
             - { name: PROCESS_ROLE, value: "worker" }

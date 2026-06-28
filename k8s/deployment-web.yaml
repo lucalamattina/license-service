@@ -13,7 +13,7 @@ spec:
     spec:
       containers:
         - name: web
-          image: license-service:dev
+          image: ghcr.io/lucalamattina/license-service:sha-4e239e1   # pinned by CI write-back on each green main
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 3000
