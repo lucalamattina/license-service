@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: license-service-web
+  labels: { app: license-service, role: web }
+spec:
+  replicas: 1                       # bumped to 2 in Step 2 to prove GitOps reconcile
+  selector:
+    matchLabels: { app: license-service, role: web }
+  template:
+    metadata:
+      labels: { app: license-service, role: web }
+    spec:
+      containers:
+        - name: web
+          image: license-service:dev
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3000
+          env:
+            - { name: PROCESS_ROLE, value: "web" }
+          envFrom:
+            - configMapRef: { name: license-service-config }
+            - secretRef: { name: license-service-secrets }
+          livenessProbe:
+            httpGet: { path: /health, port: 3000 }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet: { path: /ready, port: 3000 }   # 200 only once PG+Redis reachable
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests: { cpu: "50m", memory: "128Mi" }
+            limits:   { cpu: "500m", memory: "256Mi" }

@@ -10,5 +10,7 @@ coverage/
 .idea/
 PLAN.md
 CONTEXT.md
+KUBERNETES.md
+K8S_IMPLEMENTATION.md
 mcp/PLAN.md
 .claude/settings.local.json

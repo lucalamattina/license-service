@@ -1,0 +1,25 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: license-service-worker
+  labels: { app: license-service, role: worker }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: license-service, role: worker }
+  template:
+    metadata:
+      labels: { app: license-service, role: worker }
+    spec:
+      containers:
+        - name: worker
+          image: license-service:dev
+          imagePullPolicy: IfNotPresent
+          env:
+            - { name: PROCESS_ROLE, value: "worker" }
+          envFrom:
+            - configMapRef: { name: license-service-config }
+            - secretRef: { name: license-service-secrets }
+          resources:
+            requests: { cpu: "50m", memory: "128Mi" }
+            limits:   { cpu: "250m", memory: "256Mi" }

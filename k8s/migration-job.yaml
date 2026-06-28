@@ -1,0 +1,17 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: license-service-migrate
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: license-service:dev
+          imagePullPolicy: IfNotPresent
+          command: ["node", "dist/db/migrate-cli.js"]
+          envFrom:
+            - configMapRef: { name: license-service-config }
+            - secretRef: { name: license-service-secrets }
