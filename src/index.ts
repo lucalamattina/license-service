@@ -1,4 +1,5 @@
 import { buildServer } from './server.js';
+import { buildMetricsServer } from './metrics-server.js';
 import { createDatabase } from './db/client.js';
 import { runMigrations } from './db/migrate.js';
 import { createRedisClient } from './queue/connection.js';
@@ -42,6 +43,12 @@ async function main(): Promise<void> {
 
   // Build only the resources this role owns.
   const app = wantsWeb ? await buildServer({ db, redis }) : null;
+  // Worker-only process: serve /health + /metrics so Prometheus can scrape the
+  // counters this process owns (licenses_expired_total{path="scan"}). In role
+  // 'all' the full app already exposes /metrics, so no separate server is needed.
+  const metricsApp = ROLE === 'worker' ? await buildMetricsServer() : null;
+  const httpServer = app ?? metricsApp;
+
   const queue = wantsWorker ? createLicenseQueue(REDIS_URL) : null;
   const worker = wantsWorker ? createLicenseWorker(REDIS_URL, db) : null;
   if (wantsWorker && queue) {
@@ -50,16 +57,16 @@ async function main(): Promise<void> {
     await registerExpirationScheduler(queue);
   }
 
-  // Use Fastify's pino logger when a server exists, else fall back to console
-  // (worker-only process). Wrapped to dodge the union-signature mismatch.
+  // Every role now has an HTTP server (full app, or the worker's metrics server),
+  // so log through its pino logger.
   const logInfo = (obj: Record<string, unknown>, msg: string): void => {
-    if (app) app.log.info(obj, msg);
+    if (httpServer) httpServer.log.info(obj, msg);
     else console.log(msg, obj);
   };
 
   let shuttingDown = false;
   const teardown = async (): Promise<void> => {
-    if (app) await app.close();
+    if (httpServer) await httpServer.close();
     if (worker) await worker.close();
     if (queue) await queue.close();
     await redis.quit();
@@ -76,18 +83,14 @@ async function main(): Promise<void> {
   process.on('SIGTERM', () => void shutdown('SIGTERM'));
   process.on('SIGINT', () => void shutdown('SIGINT'));
 
-  if (app) {
+  if (httpServer) {
     try {
-      await app.listen({ port: PORT, host: HOST });
+      await httpServer.listen({ port: PORT, host: HOST });
     } catch (err) {
-      app.log.error(err);
+      httpServer.log.error(err);
       await teardown();
       process.exit(1);
     }
-  } else {
-    // Worker-only process: nothing to listen on. Stay alive on the event loop
-    // (the BullMQ worker holds it open) until a signal triggers shutdown.
-    logInfo({ role: ROLE }, 'worker process started');
   }
 }
 
