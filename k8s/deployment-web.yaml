@@ -4,7 +4,7 @@ metadata:
   name: license-service-web
   labels: { app: license-service, role: web }
 spec:
-  replicas: 1                       # bumped to 2 in Step 2 to prove GitOps reconcile
+  replicas: 2                       # bumped from 1 to prove GitOps reconcile via ArgoCD
   selector:
     matchLabels: { app: license-service, role: web }
   template:

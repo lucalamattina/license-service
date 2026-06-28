@@ -1,0 +1,20 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: license-service
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/lucalamattina/license-service.git
+    targetRevision: main
+    path: k8s
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: license-service
+  syncPolicy:
+    automated:
+      prune: true        # remove resources deleted from git
+      selfHeal: true     # revert manual drift back to git state
+    syncOptions:
+      - CreateNamespace=false   # the license-service namespace already exists
