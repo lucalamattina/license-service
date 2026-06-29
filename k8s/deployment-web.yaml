@@ -13,7 +13,7 @@ spec:
     spec:
       containers:
         - name: web
-          image: ghcr.io/lucalamattina/license-service:sha-23c749c
+          image: ghcr.io/lucalamattina/license-service:sha-2bad65a
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 3000
