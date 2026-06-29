@@ -10,6 +10,8 @@ A small TypeScript REST service for issuing, validating, and revoking software l
 
 **MCP layer:** [mcp/](mcp/) ships a Model Context Protocol server that exposes the backend to AI clients (Claude Code, Claude Desktop, Cursor). An agent can resolve users by email, audit licence history, and run the full lifecycle without writing HTTP code. Quick-start in [mcp/README.md](mcp/README.md); design rationale and eval strategy in [mcp/MCP_DESIGN.md](mcp/MCP_DESIGN.md).
 
+**Kubernetes:** the service also deploys to Kubernetes as separate **web** and **worker** Deployments ([k8s/](k8s/)), managed by **ArgoCD GitOps**, with the cluster platform itself (datastores, observability, ArgoCD) provisioned as code in **OpenTofu** ([terraform/](terraform/)). CI publishes the image to GHCR and writes the pinned tag back to the manifests, so a commit to `main` becomes a running pod with no manual step. See the [Kubernetes](#kubernetes) section.
+
 The canonical design document is [DESIGN.md](DESIGN.md). Architectural decisions live in [docs/adr/](docs/adr/). Detailed transaction algorithms live in [docs/algorithms/](docs/algorithms/).
 
 ## Try it from your terminal
@@ -168,6 +170,76 @@ CORS_ALLOWED_ORIGINS=http://localhost:5173,https://license-service-dashboard.ver
 
 The third entry above is what handles Vercel preview deploys (each preview gets a hash-suffixed subdomain). Requests with no `Origin` header (curl, server-to-server health probes) are allowed unconditionally; CORS only applies to browsers.
 
+## Kubernetes
+
+Alongside the Heroku deploy, the service runs on **Kubernetes**: the application manifests live in [k8s/](k8s/), and the cluster platform they run on (datastores, observability, ArgoCD) is provisioned as code with **OpenTofu/Terraform** in [terraform/](terraform/). Everything is validated on a local [kind](https://kind.sigs.k8s.io/) cluster — a full teardown + `tofu apply` recreate brings the whole platform up from nothing, after which ArgoCD deploys the app from git.
+
+The published image is **`ghcr.io/lucalamattina/license-service`** (public, tagged by commit SHA + `latest`).
+
+### Web / worker split
+
+The single Docker image boots in one of three roles via the `PROCESS_ROLE` env var (see [src/index.ts](src/index.ts)):
+
+- `web` — the Fastify HTTP server only, with `livenessProbe` → `/health` and `readinessProbe` → `/ready` (so traffic is routed only once Postgres + Redis are reachable). Runs 2 replicas behind a ClusterIP [Service](k8s/service.yaml).
+- `worker` — the BullMQ worker + repeatable expiry scheduler only. It serves a minimal `/health` + `/metrics` endpoint ([src/metrics-server.ts](src/metrics-server.ts)) so it can be probed and scraped, but has no inbound-traffic Service.
+- `all` — both in one process; the **default**, so Heroku and local dev are unchanged.
+
+This is the worker split called out in [DESIGN.md](DESIGN.md)'s "what I'd do differently in production" — independent scaling and blast-radius isolation, with the API process freed of background work.
+
+### Migrations as a PreSync hook
+
+Schema migrations run once per rollout via a dedicated [migration Job](k8s/migration-job.yaml) annotated as an **ArgoCD `PreSync` hook**: it runs (and must succeed) *before* the Deployments are synced, on the same image, executing [src/db/migrate-cli.ts](src/db/migrate-cli.ts). This replaces the single-dyno `RUN_MIGRATIONS_ON_BOOT` approach, which would race across multiple replicas. The hook is deliberately self-contained — it depends only on the `Secret`, not the app `ConfigMap` (which is created later in the sync phase) — so it works on a clean cluster instead of deadlocking on a missing ConfigMap.
+
+### GitOps with ArgoCD
+
+An ArgoCD `Application` watches the [k8s/](k8s/) path on `main` with automated sync (prune + self-heal). The cluster state is driven by git: change a manifest, push, and ArgoCD reconciles — no `kubectl apply`.
+
+### CI/CD: commit to running pod
+
+The [CI pipeline](.github/workflows/ci.yml) closes the loop on green `main`:
+
+1. After the six check jobs pass, the `publish` job builds the image and pushes `ghcr.io/lucalamattina/license-service:sha-<short>` + `:latest` to GHCR.
+2. It then **writes the pinned SHA tag back** into the Deployment + migration manifests and commits it with `[skip ci]`.
+3. ArgoCD syncs that commit and rolls the web + worker pods onto the new image.
+
+So a push to `main` becomes running pods with no manual step, and every deploy is an immutable, auditable SHA pinned in git.
+
+### Observability
+
+[kube-prometheus-stack](https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack) scrapes the app via two [ServiceMonitors](k8s/servicemonitor.yaml) — one for web, one for worker. Two are needed because the processes hold **separate** prom-client registries: the web owns the issuance/revocation/validation counters, the worker owns `licenses_expired_total{path="scan"}` from the scan job, so scraping only the web Service would silently miss the worker's metrics. A [Grafana dashboard](k8s/grafana-dashboard.yaml) over the custom counters ships as a ConfigMap (auto-loaded by the Grafana sidecar), so it's reproducible from git rather than click-built.
+
+### Platform as code (OpenTofu)
+
+[terraform/](terraform/) provisions everything the app depends on, with pinned chart versions:
+
+- the `license-service`, `argocd`, and `monitoring` namespaces
+- PostgreSQL + Redis (Bitnami charts, pulled from their OCI registry)
+- the app `Secret` (`DATABASE_URL` / `REDIS_URL`)
+- kube-prometheus-stack
+- ArgoCD and the root `Application` (via the `argo-cd` + `argocd-apps` charts)
+
+The kind cluster itself is the only prerequisite (in a cloud setup an EKS/GKE module would sit alongside these files; only the provider wiring changes). Full notes in [terraform/README.md](terraform/README.md).
+
+### Quick start (local kind cluster)
+
+```bash
+kind create cluster --name licsvc
+
+# Provision the platform as code (namespaces, datastores, monitoring, ArgoCD, app Secret):
+cd terraform && tofu init && tofu apply
+
+# ArgoCD then syncs k8s/ from main, runs the PreSync migration hook, and rolls the pods.
+# (Give it a minute; to nudge: kubectl annotate application license-service -n argocd argocd.argoproj.io/refresh=hard --overwrite)
+kubectl get pods -n license-service        # web (x2) + worker Running, migrate Completed
+kubectl port-forward svc/license-service 3000:3000 -n license-service
+curl localhost:3000/ready                  # {"status":"ok","checks":{"postgres":"ok","redis":"ok"}}
+```
+
+**Notes:**
+
+- The `Secret` is created by Terraform (`kubernetes_secret`) and is **not** committed — the manifests in `k8s/` are credential-free. Without Terraform you'd create it once with `kubectl create secret generic license-service-secrets ...`.
+- In-cluster Postgres/Redis is for the exercise; production would use managed services (RDS / Valkey) with the cluster running only the app.
+
 ## Design Decisions
 
 ### License state machine
@@ -269,11 +341,13 @@ All single-resource endpoints return a bare object; collection endpoints wrap th
 ```
 src/
   server.ts            Fastify app builder
-  index.ts             entrypoint (boots app + queue + worker, graceful shutdown)
+  index.ts             entrypoint (boots web/worker/all by PROCESS_ROLE, graceful shutdown)
+  metrics-server.ts    minimal /health + /metrics server for the worker-only role
   db/
     schema.ts          Drizzle schema (users, products, licenses)
     client.ts          Drizzle client factory
     migrate.ts         programmatic migration runner
+    migrate-cli.ts     runnable migrate-and-exit entrypoint (the k8s migration Job)
     postgres-options.ts  env-driven SSL config (DATABASE_SSL=true for Heroku)
   domain/
     license-state.ts   pure state-machine predicates (canRevoke, shouldExpire)
@@ -303,6 +377,9 @@ docs/algorithms/       Detailed transaction algorithms
 scripts/               CLI wrappers (db migrate / reset)
 tests/                 Vitest suites: foundation unit + integration
 mcp/                   separate-package MCP server + eval harness (see mcp/README.md)
+k8s/                   Kubernetes manifests (web + worker Deployments, migration
+                       PreSync hook, Services, ServiceMonitors, Grafana dashboard)
+terraform/             OpenTofu/Terraform: namespaces, datastores, monitoring, ArgoCD
 ```
 
 ## Tests
@@ -326,7 +403,7 @@ npm test                   # both
 
 ## CI
 
-[.github/workflows/ci.yml](.github/workflows/ci.yml) runs on every push and pull request against `main`, with `concurrency` set so a new commit cancels older in-progress runs. Six jobs run in parallel:
+[.github/workflows/ci.yml](.github/workflows/ci.yml) runs on every push and pull request against `main`, with `concurrency` set so a new commit cancels older in-progress runs. Six check jobs run in parallel; on green `main` a seventh publishes the image:
 
 | Job                 | What it does                                                                          |
 | ------------------- | ------------------------------------------------------------------------------------- |
@@ -336,5 +413,6 @@ npm test                   # both
 | `integration-tests` | `npm ci` + `npm run db:migrate:test` + `npm run test:integration`, against PostgreSQL 16 and Redis 7 service containers |
 | `build`             | `npm ci` + `npm run build`; proves the production TypeScript compile is clean         |
 | `docker-build`      | `docker buildx build` with GHA cache; proves the runtime image still assembles        |
+| `publish`           | **main only**, after all checks pass: builds + pushes the image to `ghcr.io/lucalamattina/license-service` (`:sha-<short>` + `:latest`), then writes the pinned tag back into the [k8s/](k8s/) manifests and commits it with `[skip ci]` for ArgoCD to roll out |
 
-Node 20 across the board. `npm ci` (not `npm install`) is used everywhere, with `actions/setup-node`'s `cache: 'npm'`. Permissions are scoped to `contents: read`.
+Node 20 across the board. `npm ci` (not `npm install`) is used everywhere, with `actions/setup-node`'s `cache: 'npm'`. The check jobs run with `contents: read`; only the `publish` job is granted `packages: write` (to push to GHCR) and `contents: write` (for the manifest write-back), and it never runs on pull requests, so forks can't publish.
