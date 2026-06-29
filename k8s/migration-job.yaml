@@ -17,7 +17,7 @@ spec:
       restartPolicy: Never
       containers:
         - name: migrate
-          image: ghcr.io/lucalamattina/license-service:sha-acbb96d
+          image: ghcr.io/lucalamattina/license-service:sha-23c749c
           imagePullPolicy: IfNotPresent
           command: ["node", "dist/db/migrate-cli.js"]
           # Self-contained: a PreSync hook runs BEFORE the Sync phase that creates
