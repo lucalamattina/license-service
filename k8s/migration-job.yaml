@@ -20,6 +20,12 @@ spec:
           image: ghcr.io/lucalamattina/license-service:sha-acbb96d
           imagePullPolicy: IfNotPresent
           command: ["node", "dist/db/migrate-cli.js"]
+          # Self-contained: a PreSync hook runs BEFORE the Sync phase that creates
+          # the ConfigMap, so it must NOT depend on license-service-config (doing so
+          # deadlocks the first sync on a fresh cluster with CreateContainerConfigError).
+          # The migration only needs DATABASE_URL (from the Secret, provisioned ahead
+          # of ArgoCD by Terraform) and DATABASE_SSL (false for in-cluster Postgres).
+          env:
+            - { name: DATABASE_SSL, value: "false" }
           envFrom:
-            - configMapRef: { name: license-service-config }
             - secretRef: { name: license-service-secrets }

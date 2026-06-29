@@ -1,0 +1,9 @@
+# Terraform/OpenTofu working files — never commit state (contains the DB
+# password and Secret data in plaintext) or the downloaded provider plugins.
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+*.tfvars
+# Keep the dependency lock file committed for reproducible provider versions:
+!.terraform.lock.hcl
